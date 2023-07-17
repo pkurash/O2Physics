@@ -13,3 +13,8 @@ o2physics_add_dpl_workflow(exercises-ptresolution
                            SOURCES  o2at-h1-skeletontask.cxx
                            PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore
                            COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(exercises-correlations
+                           SOURCES  o2at-h2-0-startingpoint.cxx
+                           PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore
+                           COMPONENT_NAME Analysis)
