@@ -84,6 +84,7 @@ struct createPCM {
   Configurable<int> mincrossedrows{"mincrossedrows", 10, "min crossed rows"};
   Configurable<float> maxchi2tpc{"maxchi2tpc", 4.0, "max chi2/NclsTPC"};
   Configurable<float> maxchi2its{"maxchi2its", 5.0, "max chi2/NclsITS"};
+  Configurable<float> maxpt_itsonly{"maxpt_itsonly", 0.5, "max pT for ITSonly tracks"};
   Configurable<float> min_tpcdEdx{"min_tpcdEdx", 30.0, "min TPC dE/dx"};
   Configurable<float> max_tpcdEdx{"max_tpcdEdx", 110.0, "max TPC dE/dx"};
   Configurable<float> margin_r{"margin_r", 7.0, "margin for r cut"};
@@ -329,10 +330,18 @@ struct createPCM {
       }
     }
 
-    bool isITSonly = track.hasITS() & !track.hasTPC() & !track.hasTRD() & !track.hasTOF();
-    if (isITSonly && track.itsChi2NCl() > maxchi2its) {
-      return false;
+    if (track.hasITS()) {
+      if (track.itsChi2NCl() > maxchi2its) {
+        return false;
+      }
+      bool isITSonly = track.hasITS() & !track.hasTPC() & !track.hasTRD() & !track.hasTOF();
+      if (isITSonly) {
+        if (track.pt() > maxpt_itsonly) {
+          return false;
+        }
+      }
     }
+
     return true;
   }
 
