@@ -58,7 +58,8 @@ struct lmeelfcocktail {
     {331, {"etaP/", {22, 223, 211 * 211}}},
     {113, {"rho/", {-1}}},
     {223, {"omega/", {-1, 111}}},
-    {333, {"phi/", {-1, 111, 221}}}};
+    {333, {"phi/", {-1, 111, 221}}},
+    {443, {"Jpsi/", {-1}}}};
 
   std::map<TString, int> histogramId;
 
@@ -283,6 +284,8 @@ struct lmeelfcocktail {
 
   void init(InitContext& context)
   {
+    registry.add<TH1>("NEvents", "NEvents", HistType::kTH1F, {{1, 0., 1.}}, false);
+
     AxisSpec mass_axis = {fConfigMeeBins, "m_{ee} (GeV/#it{c}^{2})"};
     AxisSpec ptee_axis = {fConfigPteeBins, "#it{p}_{T,ee} (GeV/#it{c})"};
     AxisSpec cos2dphi_axis = {fConfigCos2DPhi, "cos(2(#varphi_{ee} - #Psi_{RP}))"}; // PsiRP = 0 rad. in generator.
@@ -328,8 +331,10 @@ struct lmeelfcocktail {
     }
   }
 
-  void processCocktail(McParticlesSmeared const& mcParticles)
+  void processCocktail(aod::McCollision const&, McParticlesSmeared const& mcParticles)
   {
+    registry.fill(HIST("NEvents"), 0.5);
+
     for (auto const& particle : mcParticles) {
       if (particle.has_mothers()) {
         continue;

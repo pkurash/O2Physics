@@ -1466,7 +1466,7 @@ struct UpcCandProducer {
                           fitInfo.BBFT0Apf, fitInfo.BBFT0Cpf, fitInfo.BGFT0Apf, fitInfo.BGFT0Cpf,
                           fitInfo.BBFV0Apf, fitInfo.BGFV0Apf,
                           fitInfo.BBFDDApf, fitInfo.BBFDDCpf, fitInfo.BGFDDApf, fitInfo.BGFDDCpf);
-      eventCandidatesSelExtras(chFT0A, chFT0C, chFDDA, chFDDC, chFV0A);
+      eventCandidatesSelExtras(chFT0A, chFT0C, chFDDA, chFDDC, chFV0A, 0, 0, 0, 0, 0);
       eventCandidatesSelsFwd(fitInfo.distClosestBcV0A,
                              fitInfo.distClosestBcT0A,
                              amplitudesT0A,
@@ -1610,7 +1610,7 @@ struct UpcCandProducer {
       if (nMFTs > fNFwdProngs) // too many tracks
         continue;
       std::vector<int64_t> trkCandIDs{};
-      const auto& midTrackIDs = midIt->second;
+      const auto& midTrackIDs = midIt->second; // to retrieve corresponding MCH-MID tracks
       if (nMFTs == fNFwdProngs) {
         for (auto iMft : fwdTrackIDs) {
           auto trk = fwdTracks.iteratorAt(iMft);
@@ -1724,7 +1724,7 @@ struct UpcCandProducer {
                           fitInfo.BBFT0Apf, fitInfo.BBFT0Cpf, fitInfo.BGFT0Apf, fitInfo.BGFT0Cpf,
                           fitInfo.BBFV0Apf, fitInfo.BGFV0Apf,
                           fitInfo.BBFDDApf, fitInfo.BBFDDCpf, fitInfo.BGFDDApf, fitInfo.BGFDDCpf);
-      eventCandidatesSelExtras(chFT0A, chFT0C, chFDDA, chFDDC, chFV0A);
+      eventCandidatesSelExtras(chFT0A, chFT0C, chFDDA, chFDDC, chFV0A, 0, 0, 0, 0, 0);
       eventCandidatesSelsFwd(fitInfo.distClosestBcV0A,
                              fitInfo.distClosestBcT0A,
                              amplitudesT0A,
@@ -1897,13 +1897,35 @@ struct UpcCandProducer {
                               (o2::aod::McFwdTrackLabels*)nullptr);
   }
 
+  void processForwardGlobalMC(ForwardTracks const& fwdTracks,
+                              o2::aod::FwdTrkCls const& fwdTrkClusters,
+                              o2::aod::AmbiguousFwdTracks const& ambFwdTracks,
+                              BCsWithBcSels const& bcs,
+                              o2::aod::Collisions const& collisions,
+                              o2::aod::FT0s const& ft0s,
+                              o2::aod::FDDs const& fdds,
+                              o2::aod::FV0As const& fv0as,
+                              o2::aod::Zdcs const& zdcs,
+                              o2::aod::McCollisions const& mcCollisions, o2::aod::McParticles const& mcParticles,
+                              o2::aod::McFwdTrackLabels const& mcFwdTrackLabels)
+  {
+    fDoMC = true;
+    skimMCInfo(mcCollisions, mcParticles, bcs);
+    createCandidatesFwdGlobal(fwdTracks, fwdTrkClusters, ambFwdTracks,
+                              bcs, collisions,
+                              ft0s, fdds, fv0as, zdcs,
+                              &mcFwdTrackLabels);
+    fNewPartIDs.clear();
+  }
+
   PROCESS_SWITCH(UpcCandProducer, processSemiFwd, "Produce candidates in semiforward/forward region", false);
   PROCESS_SWITCH(UpcCandProducer, processCentral, "Produce candidates in central region", false);
   PROCESS_SWITCH(UpcCandProducer, processSemiFwdMC, "Produce candidates in semiforward/forward region with MC information", false);
   PROCESS_SWITCH(UpcCandProducer, processCentralMC, "Produce candidates in central region with MC information", false);
   PROCESS_SWITCH(UpcCandProducer, processForward, "Produce candidates in forward region", false);
   PROCESS_SWITCH(UpcCandProducer, processForwardGlobal, "Produce candidates in forward region with MFT", true);
-  PROCESS_SWITCH(UpcCandProducer, processForwardMC, "Produce caniddates in forward region with MC information", false);
+  PROCESS_SWITCH(UpcCandProducer, processForwardMC, "Produce candidates in forward region with MC information", false);
+  PROCESS_SWITCH(UpcCandProducer, processForwardGlobalMC, "Produce candidates in forward region with MFT and MC information", false);
 };
 
 WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)

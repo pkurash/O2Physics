@@ -208,18 +208,23 @@ struct RecoDecay {
   /// Constrains angle to be within a range.
   /// \note Inspired by TVector2::Phi_0_2pi in ROOT.
   /// \param angle  angle
-  /// \param min  minimum of the range
-  /// \return value within [min, min + 2π).
+  /// \param minimum  minimum of the range
+  /// \param harmonic  harmonic number
+  /// \return value of angle within [minimum, minimum + 2π / harmonic).
   template <typename T, typename U = float>
-  static T constrainAngle(T angle, U min = 0.)
+  static T constrainAngle(T angle, U minimum = 0.0F, unsigned int harmonic = 1U)
   {
-    while (angle < min) {
-      angle += o2::constants::math::TwoPI;
+    auto period = o2::constants::math::TwoPI;
+    if (harmonic != 1U) {
+      period /= harmonic;
     }
-    while (angle >= min + o2::constants::math::TwoPI) {
-      angle -= o2::constants::math::TwoPI;
+    while (angle < minimum) {
+      angle += period;
     }
-    return (T)angle;
+    while (angle >= minimum + period) {
+      angle -= period;
+    }
+    return angle;
   }
 
   /// Calculates cosine of pointing angle.
@@ -1032,6 +1037,119 @@ struct RecoDecay {
     }
     if (!searchUpToQuark && couldBePrompt) { // Returns prompt if it's a charm hadron or a charm-hadron daughter. Note: 1) LF decay particles from cases like -> Lc -> p K0S, K0S -> pi pi are marked as prompt. 2) if particles from HF parton showers have to be searched, switch to option "search up to quark"
       return OriginType::Prompt;
+    }
+    return OriginType::None;
+  }
+
+  /// based on getCharmHardronOrigin in order to extend general particle
+  /// Finding the origin (from charm hadronisation or beauty-hadron decay) of paritcle (b, c and others)
+  /// \param particlesMC  table with MC particles
+  /// \param particle  MC particle
+  /// \param searchUpToQuark if true tag origin based on charm/beauty quark otherwise on the presence of a b-hadron or c-hadron
+  /// \param idxBhadMothers optional vector of b-hadron indices (might be more than one in case of searchUpToQuark in case of beauty resonances)
+  /// \return an integer corresponding to the origin (0: none(others), 1: charm, 2: beauty) as in OriginType
+  template <typename T>
+  static int getParticleOrigin(const T& particlesMC,
+                               const typename T::iterator& particle,
+                               const bool searchUpToQuark = false,
+                               std::vector<int>* idxBhadMothers = nullptr)
+  {
+    int stage = 0; // mother tree level (just for debugging)
+
+    // vector of vectors with mother indices; each line corresponds to a "stage"
+    std::vector<std::vector<int64_t>> arrayIds{};
+    std::vector<int64_t> initVec{particle.globalIndex()};
+    arrayIds.push_back(initVec); // the first vector contains the index of the original particle
+    auto PDGParticle = std::abs(particle.pdgCode());
+    bool couldBeCharm = false;
+    if (PDGParticle / 100 == 4 || PDGParticle / 1000 == 4) {
+      couldBeCharm = true;
+    }
+    while (arrayIds[-stage].size() > 0) {
+      // vector of mother indices for the current stage
+      std::vector<int64_t> arrayIdsStage{};
+      for (auto& iPart : arrayIds[-stage]) { // check all the particles that were the mothers at the previous stage
+        auto particleMother = particlesMC.rawIteratorAt(iPart - particlesMC.offset());
+        if (particleMother.has_mothers()) {
+
+          // we break immediately if searchUpToQuark is false and the first mother is a parton (an hadron should never be the mother of a parton)
+          if (!searchUpToQuark) {
+            auto mother = particlesMC.rawIteratorAt(particleMother.mothersIds().front() - particlesMC.offset());
+            auto PDGParticleIMother = std::abs(mother.pdgCode()); // PDG code of the mother
+            if (PDGParticleIMother < 9 || (PDGParticleIMother > 20 && PDGParticleIMother < 38)) {
+              // auto PDGPaticle = std::abs(particleMother.pdgCode());
+              if (
+                (PDGParticleIMother / 100 == 5 || // b mesons
+                 PDGParticleIMother / 1000 == 5)  // b baryons
+              ) {
+                return OriginType::NonPrompt; // beauty
+              }
+              if (
+                (PDGParticleIMother / 100 == 4 || // c mesons
+                 PDGParticleIMother / 1000 == 4)  // c baryons
+              ) {
+                return OriginType::Prompt; // charm
+              }
+              break;
+            }
+          }
+
+          for (auto iMother = particleMother.mothersIds().front(); iMother <= particleMother.mothersIds().back(); ++iMother) { // loop over the mother particles of the analysed particle
+            if (std::find(arrayIdsStage.begin(), arrayIdsStage.end(), iMother) != arrayIdsStage.end()) {                       // if a mother is still present in the vector, do not check it again
+              continue;
+            }
+            auto mother = particlesMC.rawIteratorAt(iMother - particlesMC.offset());
+            // Check status code
+            // auto motherStatusCode = std::abs(mother.getGenStatusCode());
+            auto PDGParticleIMother = std::abs(mother.pdgCode()); // PDG code of the mother
+            // Check mother's PDG code.
+            // printf("getMother: ");
+            // for (int i = stage; i < 0; i++) // Indent to make the tree look nice.
+            // printf(" ");
+            // printf("Stage %d: Mother PDG: %d, status: %d, Index: %d\n", stage, PDGParticleIMother, motherStatusCode, iMother);
+
+            if (searchUpToQuark) {
+              if (idxBhadMothers) {
+                if (PDGParticleIMother / 100 == 5 || // b mesons
+                    PDGParticleIMother / 1000 == 5)  // b baryons
+                {
+                  idxBhadMothers->push_back(iMother);
+                }
+              }
+              if (PDGParticleIMother == 5) {  // b quark
+                return OriginType::NonPrompt; // beauty
+              }
+              if (PDGParticleIMother == 4) { // c quark
+                return OriginType::Prompt;   // charm
+              }
+            } else {
+              if (
+                (PDGParticleIMother / 100 == 5 || // b mesons
+                 PDGParticleIMother / 1000 == 5)  // b baryons
+              ) {
+                if (idxBhadMothers) {
+                  idxBhadMothers->push_back(iMother);
+                }
+                return OriginType::NonPrompt; // beauty
+              }
+              if (
+                (PDGParticleIMother / 100 == 4 || // c mesons
+                 PDGParticleIMother / 1000 == 4)  // c baryons
+              ) {
+                couldBeCharm = true;
+              }
+            }
+            // add mother index in the vector for the current stage
+            arrayIdsStage.push_back(iMother);
+          }
+        }
+      }
+      // add vector of mother indices for the current stage
+      arrayIds.push_back(arrayIdsStage);
+      stage--;
+    }
+    if (couldBeCharm) {
+      return OriginType::Prompt; // charm
     }
     return OriginType::None;
   }
