@@ -17,15 +17,26 @@
 ///
 /// \note based on taskD0.cxx, taskLc.cxx
 
-#include <vector>
-
-#include "Framework/AnalysisTask.h"
-#include "Framework/HistogramRegistry.h"
-#include "Framework/runDataProcessing.h"
-
 #include "PWGHF/Core/HfHelper.h"
+#include "PWGHF/Core/SelectorCuts.h"
+#include "PWGHF/DataModel/AliasTables.h"
 #include "PWGHF/DataModel/CandidateReconstructionTables.h"
 #include "PWGHF/DataModel/CandidateSelectionTables.h"
+
+#include "Common/Core/RecoDecay.h"
+
+#include <CommonConstants/PhysicsConstants.h>
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Configurable.h>
+#include <Framework/HistogramRegistry.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/runDataProcessing.h>
+
+#include <cstdlib>
+#include <vector>
 
 using namespace o2;
 using namespace o2::analysis;
@@ -37,38 +48,38 @@ struct HfTaskLcToK0sP {
   Configurable<int> selectionFlagLcToK0sP{"selectionFlagLcToK0sP", 1, "Selection Flag for Lc"};
   Configurable<int> selectionFlagLcbarToK0sP{"selectionFlagLcbarToK0sP", 1, "Selection Flag for Lcbar"};
   Configurable<double> etaCandMax{"etaCandMax", -1., "max. cand. pseudorapidity"};
+  Configurable<double> yCandGenMax{"yCandGenMax", 0.5, "max. gen particle rapidity"};
+  Configurable<double> yCandRecoMax{"yCandRecoMax", 0.8, "max. cand. rapidity"};
   Configurable<std::vector<double>> binsPt{"binsPt", std::vector<double>{hf_cuts_lc_to_k0s_p::vecBinsPt}, "pT bin limits"};
 
-  HfHelper hfHelper;
+  using TracksWPid = soa::Join<aod::TracksWExtra, aod::TracksPidPr>;
 
   Filter filterSelectCandidates = (aod::hf_sel_candidate_lc_to_k0s_p::isSelLcToK0sP >= selectionFlagLcToK0sP || aod::hf_sel_candidate_lc_to_k0s_p::isSelLcToK0sP >= selectionFlagLcbarToK0sP);
-
-  using TracksWPid = soa::Join<aod::TracksWExtra, aod::TracksPidPr>;
 
   HistogramRegistry registry{"registry"};
 
   void init(InitContext& context)
   {
     // axes
-    AxisSpec axisBinsPt = {binsPt, "#it{p}_{T} (GeV/#it{c})"};
-    AxisSpec axisPt = {300, 0.0f, 30.0f, "#it{p}_{T} (GeV/#it{c})"};
-    AxisSpec axisEta = {500, -2.0f, 2.0f, "#it{#eta}"};
-    AxisSpec axisPhi = {100, 0.f, 6.3f, "#it{#phi}"};
-    AxisSpec axisMassCand = {600, 1.98f, 2.58f, "inv. mass (p K_{S}^{0}) (GeV/#it{c}^{2})"};
-    AxisSpec axisd0 = {500, -0.5f, 0.5f, "DCAxy (cm)"};
-    AxisSpec axisd0V0Daughters = {1000, -5.0f, 5.0f, "DCAxy (cm)"};
-    AxisSpec axisV0CPA = {500, 0.98f, 1.0001f, "v0 cos pointing angle"};
-    AxisSpec axisV0Radius = {1000, 0.f, 40.f, "V0 radius (cm)"};
-    AxisSpec axisV0DCADaughters = {200, 0.f, 2.f, "DCA (cm)"};
-    AxisSpec axisMassK0Short = {500, 0.4f, 0.6f, "#it{m}(K_{S}^{0}) (GeV/#it{c}^{2})"};
-    AxisSpec axisMassLambda = {500, 1.0f, 1.2f, "#it{m}(#Lambda) (GeV/#it{c}^{2})"};
-    AxisSpec axisMassGamma = {500, 0.0f, 0.4f, "#it{m}(#gamma) (GeV/#it{c}^{2})"};
-    AxisSpec axisCPACand = {110, -1.1f, 1.1f, "candiate cos pointing angle"};
-    AxisSpec axisDecLength = {200, 0.f, 2.0f, "decay length (cm)"};
-    AxisSpec axisProperLifetime = {100, 0.f, 0.2f, "#it{c#tau} (cm)"};
-    AxisSpec axisProperLifetimeV0 = {1000, 0.f, 80.f, "#it{c#tau} (cm)"};
-    AxisSpec axisNSigma = {100, -6.f, 6.f, "n#it{#sigma}_{p}"};
-    AxisSpec axisPidP = {100, 0.f, 10.0f, "#it{p} (GeV/#it{c})"};
+    AxisSpec const axisBinsPt = {binsPt, "#it{p}_{T} (GeV/#it{c})"};
+    AxisSpec const axisPt = {300, 0.0f, 30.0f, "#it{p}_{T} (GeV/#it{c})"};
+    AxisSpec const axisEta = {500, -2.0f, 2.0f, "#it{#eta}"};
+    AxisSpec const axisPhi = {100, 0.f, 6.3f, "#it{#phi}"};
+    AxisSpec const axisMassCand = {600, 1.98f, 2.58f, "inv. mass (p K_{S}^{0}) (GeV/#it{c}^{2})"};
+    AxisSpec const axisd0 = {500, -0.5f, 0.5f, "DCAxy (cm)"};
+    AxisSpec const axisd0V0Daughters = {1000, -5.0f, 5.0f, "DCAxy (cm)"};
+    AxisSpec const axisV0CPA = {500, 0.98f, 1.0001f, "v0 cos pointing angle"};
+    AxisSpec const axisV0Radius = {1000, 0.f, 40.f, "V0 radius (cm)"};
+    AxisSpec const axisV0DCADaughters = {200, 0.f, 2.f, "DCA (cm)"};
+    AxisSpec const axisMassK0Short = {500, 0.4f, 0.6f, "#it{m}(K_{S}^{0}) (GeV/#it{c}^{2})"};
+    AxisSpec const axisMassLambda = {500, 1.0f, 1.2f, "#it{m}(#Lambda) (GeV/#it{c}^{2})"};
+    AxisSpec const axisMassGamma = {500, 0.0f, 0.4f, "#it{m}(#gamma) (GeV/#it{c}^{2})"};
+    AxisSpec const axisCPACand = {110, -1.1f, 1.1f, "candiate cos pointing angle"};
+    AxisSpec const axisDecLength = {200, 0.f, 2.0f, "decay length (cm)"};
+    AxisSpec const axisProperLifetime = {100, 0.f, 0.2f, "#it{c#tau} (cm)"};
+    AxisSpec const axisProperLifetimeV0 = {1000, 0.f, 80.f, "#it{c#tau} (cm)"};
+    AxisSpec const axisNSigma = {100, -6.f, 6.f, "n#it{#sigma}_{p}"};
+    AxisSpec const axisPidP = {100, 0.f, 10.0f, "#it{p} (GeV/#it{c})"};
     // data
     registry.add("hPtCand", "cascade candidates;candidate #it{p}_{T} (GeV/#it{c});entries", {HistType::kTH1F, {axisPt}});
     registry.add("hEtaCand", "cascade candidates;candidate #it{#eta};entries", {HistType::kTH1F, {axisEta}});
@@ -129,6 +140,8 @@ struct HfTaskLcToK0sP {
     // add MC histograms
     if (context.mOptions.get<bool>("processMc")) {
       registry.add("MC/Rec/hPtCandRecSig", "cascade candidates;candidate #it{p}_{T} (GeV/#it{c});entries", {HistType::kTH1F, {axisPt}});
+      registry.add("MC/Rec/hPtCandRecSigPrompt", "cascade candidates;candidate #it{p}_{T} (GeV/#it{c});entries", {HistType::kTH1F, {axisPt}});
+      registry.add("MC/Rec/hPtCandRecSigNonPrompt", "cascade candidates;candidate #it{p}_{T} (GeV/#it{c});entries", {HistType::kTH1F, {axisPt}});
       registry.add("MC/Rec/hPtCandRecBg", "cascade candidates;candidate #it{p}_{T} (GeV/#it{c});entries", {HistType::kTH1F, {axisPt}});
       registry.add("MC/Rec/hEtaCandRecSig", "cascade candidates;candidate #it{#eta};entries", {HistType::kTH1F, {axisEta}});
       registry.add("MC/Rec/hEtaCandVsPtCandRecSig", "cascade candidates;candidate #it{#eta};p_{T}", {HistType::kTH2F, {axisEta, axisBinsPt}});
@@ -139,6 +152,8 @@ struct HfTaskLcToK0sP {
       registry.add("MC/Rec/hPhiCandRecBg", "cascade candidates;candidate #it{#phi};entries", {HistType::kTH1F, {axisPhi}});
       registry.add("MC/Rec/hPhiCandVsPtCandRecBg", "cascade candidates;candidate #it{#phi};p_{T}", {HistType::kTH2F, {axisPhi, axisBinsPt}});
       registry.add("MC/Gen/hPtCandGen", "cascade candidates;candidate #it{p}_{T} (GeV/#it{c});entries", {HistType::kTH1F, {axisPt}});
+      registry.add("MC/Gen/hPtCandGenPrompt", "cascade candidates;candidate #it{p}_{T} (GeV/#it{c});entries", {HistType::kTH1F, {axisPt}});
+      registry.add("MC/Gen/hPtCandGenNonPrompt", "cascade candidates;candidate #it{p}_{T} (GeV/#it{c});entries", {HistType::kTH1F, {axisPt}});
       registry.add("MC/Gen/hEtaCandGen", "cascade candidates;candidate #it{#eta};entries", {HistType::kTH1F, {axisEta}});
       registry.add("MC/Gen/hEtaCandVsPtCandGen", "cascade candidates;candidate #it{#eta};p_{T}", {HistType::kTH2F, {axisEta, axisBinsPt}});
       registry.add("MC/Gen/hPhiCandGen", "cascade candidates;candidate #it{#phi};entries", {HistType::kTH1F, {axisPhi}});
@@ -250,21 +265,17 @@ struct HfTaskLcToK0sP {
                TracksWPid const&)
   {
     for (const auto& candidate : candidates) {
-      /*
-      // no such selection for LcK0sp for now - it is the only cascade
-      if (!(candidate.hfflag() & 1 << D0ToPiK)) {
+      if (etaCandMax >= 0. && std::abs(candidate.eta()) > etaCandMax) {
         continue;
       }
-      */
-
-      if (etaCandMax >= 0. && std::abs(candidate.eta()) > etaCandMax) {
+      if (yCandRecoMax >= 0. && std::abs(HfHelper::yLc(candidate)) > yCandRecoMax) {
         continue;
       }
 
       auto ptCand = candidate.pt();
       auto eta = candidate.eta();
       auto phi = candidate.phi();
-      auto invMassLcToK0sP = hfHelper.invMassLcToK0sP(candidate);
+      auto invMassLcToK0sP = HfHelper::invMassLcToK0sP(candidate);
       auto ptProng0 = candidate.ptProng0();
       auto ptProng1 = candidate.ptProng1();
       auto impactParameter0 = candidate.impactParameter0();
@@ -280,13 +291,13 @@ struct HfTaskLcToK0sP {
       auto mLambda = candidate.mLambda();
       auto mAntiLambda = candidate.mAntiLambda();
       auto mGamma = candidate.mGamma();
-      auto ctV0K0Short = hfHelper.ctV0K0s(candidate);
-      auto ctV0Lambda = hfHelper.ctV0Lambda(candidate);
+      auto ctV0K0Short = HfHelper::ctV0K0s(candidate);
+      auto ctV0Lambda = HfHelper::ctV0Lambda(candidate);
       auto cpa = candidate.cpa();
       auto cpaXY = candidate.cpaXY();
       auto decayLength = candidate.decayLength();
       auto decayLengthXY = candidate.decayLengthXY();
-      auto ctLc = hfHelper.ctLc(candidate);
+      auto ctLc = HfHelper::ctLc(candidate);
 
       registry.fill(HIST("hPtCand"), ptCand);
       registry.fill(HIST("hEtaCand"), eta);
@@ -364,10 +375,14 @@ struct HfTaskLcToK0sP {
         continue;
       }
 
+      if (yCandRecoMax >= 0. && std::abs(HfHelper::yLc(candidate)) > yCandRecoMax) {
+        continue;
+      }
+
       auto ptCand = candidate.pt();
       auto eta = candidate.eta();
       auto phi = candidate.phi();
-      auto invMassLcToK0sP = hfHelper.invMassLcToK0sP(candidate);
+      auto invMassLcToK0sP = HfHelper::invMassLcToK0sP(candidate);
       auto ptProng0 = candidate.ptProng0();
       auto ptProng1 = candidate.ptProng1();
       auto impactParameter0 = candidate.impactParameter0();
@@ -383,19 +398,24 @@ struct HfTaskLcToK0sP {
       auto mLambda = candidate.mLambda();
       auto mAntiLambda = candidate.mAntiLambda();
       auto mGamma = candidate.mGamma();
-      auto ctV0K0Short = hfHelper.ctV0K0s(candidate);
-      auto ctV0Lambda = hfHelper.ctV0Lambda(candidate);
+      auto ctV0K0Short = HfHelper::ctV0K0s(candidate);
+      auto ctV0Lambda = HfHelper::ctV0Lambda(candidate);
       auto cpa = candidate.cpa();
       auto cpaXY = candidate.cpaXY();
       auto decayLength = candidate.decayLength();
       auto decayLengthXY = candidate.decayLengthXY();
-      auto ctLc = hfHelper.ctLc(candidate);
+      auto ctLc = HfHelper::ctLc(candidate);
 
       const auto& bach = candidate.prong0_as<TracksWPid>(); // bachelor track
       auto tpcNSigmaPr = bach.tpcNSigmaPr();
       auto pBach = bach.p();
 
       if (std::abs(candidate.flagMcMatchRec()) == 1) {
+        if (candidate.originMcRec() == RecoDecay::OriginType::Prompt) {
+          registry.fill(HIST("MC/Rec/hPtCandRecSigPrompt"), ptCand);
+        } else if (candidate.originMcRec() == RecoDecay::OriginType::NonPrompt) {
+          registry.fill(HIST("MC/Rec/hPtCandRecSigNonPrompt"), ptCand);
+        }
         registry.fill(HIST("MC/Rec/hPtCandRecSig"), ptCand);
         registry.fill(HIST("MC/Rec/hEtaCandRecSig"), eta);
         registry.fill(HIST("MC/Rec/hEtaCandVsPtCandRecSig"), eta, ptCand);
@@ -522,6 +542,11 @@ struct HfTaskLcToK0sP {
       }
 
       if (std::abs(particle.flagMcMatchGen()) == 1) {
+
+        auto yGen = RecoDecay::y(particle.pVector(), o2::constants::physics::MassLambdaCPlus);
+        if (yCandGenMax >= 0. && std::abs(yGen) > yCandGenMax) {
+          continue;
+        }
         auto ptCand = particle.pt();
         auto eta = particle.eta();
         auto phi = particle.phi();
@@ -530,6 +555,12 @@ struct HfTaskLcToK0sP {
         registry.fill(HIST("MC/Gen/hEtaCandVsPtCandGen"), eta, ptCand);
         registry.fill(HIST("MC/Gen/hPhiCandGen"), phi);
         registry.fill(HIST("MC/Gen/hPhiCandVsPtCandGen"), phi, ptCand);
+
+        if (particle.originMcGen() == RecoDecay::OriginType::Prompt) {
+          registry.fill(HIST("MC/Gen/hPtCandGenPrompt"), ptCand);
+        } else if (particle.originMcGen() == RecoDecay::OriginType::NonPrompt) {
+          registry.fill(HIST("MC/Gen/hPtCandGenNonPrompt"), ptCand);
+        }
       }
     }
   }

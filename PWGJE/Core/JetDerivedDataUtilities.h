@@ -9,7 +9,7 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-/// \file JetDetivedDataUtilities.h
+/// \file JetDerivedDataUtilities.h
 /// \brief Jet derived data related utilities
 ///
 /// \author Nima Zardoshti <nima.zardoshti@cern.ch>
@@ -17,27 +17,42 @@
 #ifndef PWGJE_CORE_JETDERIVEDDATAUTILITIES_H_
 #define PWGJE_CORE_JETDERIVEDDATAUTILITIES_H_
 
-#include <vector>
-#include <string>
-#include "Common/CCDB/TriggerAliases.h"
+#include "PWGUD/Core/SGSelector.h"
+
 #include "Common/CCDB/EventSelectionParams.h"
+#include "Common/CCDB/RCTSelectionFlags.h"
+#include "Common/CCDB/TriggerAliases.h"
+
+#include <CommonConstants/PhysicsConstants.h>
+
+#include <Rtypes.h>
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <string>
+#include <vector>
 
 namespace jetderiveddatautilities
 {
 
-static constexpr float mPion = 0.139; // TDatabasePDG::Instance()->GetParticle(211)->Mass(); //can be removed when pion mass becomes default for unidentified tracks
+static constexpr float mPion = o2::constants::physics::MassPiPlus; // TDatabasePDG::Instance()->GetParticle(211)->Mass(); //can be removed when pion mass becomes default for unidentified tracks
 
 enum JCollisionSel {
   sel8 = 0,
-  sel8Full = 1,
-  sel8FullPbPb = 2,
-  selMC = 3,
-  selMCFull = 4,
-  selMCFullPbPb = 5,
-  selUnanchoredMC = 6,
-  selTVX = 7,
-  sel7 = 8,
-  sel7KINT7 = 9
+  sel7 = 1,
+  selKINT7 = 2,
+  selTVX = 3,
+  selNoTimeFrameBorder = 4,
+  selNoITSROFrameBorder = 5,
+  selNoSameBunchPileup = 6,
+  selIsGoodZvtxFT0vsPV = 7,
+  selNoCollInTimeRangeStandard = 8,
+  selNoCollInRofStandard = 9,
+  selUpcSingleGapA = 10,
+  selUpcSingleGapC = 11,
+  selUpcDoubleGap = 12,
 };
 
 enum JCollisionSubGeneratorId {
@@ -46,84 +61,178 @@ enum JCollisionSubGeneratorId {
 };
 
 template <typename T>
-bool selectCollision(T const& collision, int eventSelection = -1, bool skipMBGapEvents = true)
+bool commonCollisionSelection(T const& collision, bool skipMBGapEvents = true, bool rctSelection = true, std::string rctLabel = "CBT_hadronPID", bool rejectLimitedAcceptanceRct = false, bool requireZDCRct = false)
 {
-  if (skipMBGapEvents && collision.subGeneratorId() == JCollisionSubGeneratorId::mbGap) {
+  if (skipMBGapEvents && collision.getSubGeneratorId() == JCollisionSubGeneratorId::mbGap) {
     return false;
   }
-  if (eventSelection == -1) {
-    return true;
+  o2::aod::rctsel::RCTFlagsChecker rctChecker;
+  rctChecker.init(rctLabel, requireZDCRct, rejectLimitedAcceptanceRct);
+  if (rctSelection && !rctChecker.checkTable(collision)) { // CBT_hadronPID given as default so that TOF is included in RCT selection to benefit from better timing for tracks. Impact of this for inclusive jets should be studied
+    return false;
   }
-  return (collision.eventSel() & (1 << eventSelection));
-}
-
-int initialiseEventSelection(std::string eventSelection)
-{
-  if (eventSelection == "sel8") {
-    return JCollisionSel::sel8;
-  }
-  if (eventSelection == "sel8Full") {
-    return JCollisionSel::sel8Full;
-  }
-  if (eventSelection == "sel8FullPbPb") {
-    return JCollisionSel::sel8FullPbPb;
-  }
-  if (eventSelection == "selMC") {
-    return JCollisionSel::selMC;
-  }
-  if (eventSelection == "selMCFull") {
-    return JCollisionSel::selMCFull;
-  }
-  if (eventSelection == "selMCFullPbPb") {
-    return JCollisionSel::selMCFullPbPb;
-  }
-  if (eventSelection == "selUnanchoredMC") {
-    return JCollisionSel::selUnanchoredMC;
-  }
-  if (eventSelection == "selTVX") {
-    return JCollisionSel::selTVX;
-  }
-  if (eventSelection == "sel7") {
-    return JCollisionSel::sel7;
-  }
-  if (eventSelection == "sel7KINT7") {
-    return JCollisionSel::sel7KINT7;
-  }
-  return -1;
+  return true;
 }
 
 template <typename T>
-uint16_t setEventSelectionBit(T const& collision)
+bool selectMcCollision(T const& mcCollision, bool skipMBGapEvents = true, bool rctSelection = true, std::string rctLabel = "CBT_hadronPID", bool rejectLimitedAcceptanceRct = false, bool requireZDCRct = false)
+{
+  return commonCollisionSelection(mcCollision, skipMBGapEvents, rctSelection, rctLabel, rejectLimitedAcceptanceRct, requireZDCRct);
+}
+
+template <typename T>
+bool selectCollision(T const& collision, const std::vector<int>& eventSelectionMaskBits, bool skipMBGapEvents = true, bool rctSelection = true, std::string rctLabel = "CBT_hadronPID", bool rejectLimitedAcceptanceRct = false, bool requireZDCRct = false)
+{
+
+  if (!commonCollisionSelection(collision, skipMBGapEvents, rctSelection, rctLabel, rejectLimitedAcceptanceRct, requireZDCRct)) {
+    return false;
+  }
+  if (eventSelectionMaskBits.size() == 0) {
+    return true;
+  }
+  for (auto eventSelectionMaskBit : eventSelectionMaskBits) {
+    if (!(collision.eventSel() & (1 << eventSelectionMaskBit))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool eventSelectionMasksContainSelection(const std::string& eventSelectionMasks, std::string selection)
+{
+  size_t position = 0;
+  while ((position = eventSelectionMasks.find(selection, position)) != std::string::npos) {
+    bool validStart = (position == 0 || eventSelectionMasks[position - 1] == '+');
+    bool validEnd = (position + selection.length() == eventSelectionMasks.length() || eventSelectionMasks[position + selection.length()] == '+');
+    if (validStart && validEnd) {
+      return true;
+    }
+    position += selection.length();
+  }
+  return false;
+}
+
+std::vector<int> initialiseEventSelectionBits(const std::string& eventSelectionMasks)
+{
+  std::vector<int> eventSelectionMaskBits;
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "sel8")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::sel8);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "sel7")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::sel7);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "selKINT7")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selKINT7);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "TVX")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selTVX);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "NoTimeFrameBorder")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoTimeFrameBorder);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "NoITSROFrameBorder")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoITSROFrameBorder);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "NoSameBunchPileup")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoSameBunchPileup);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "IsGoodZvtxFT0vsPV")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selIsGoodZvtxFT0vsPV);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "NoCollInTimeRangeStandard")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoCollInTimeRangeStandard);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "NoCollInRofStandard")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoCollInRofStandard);
+  }
+
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "sel8Full")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::sel8);
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoSameBunchPileup);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "sel8FullPbPb")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::sel8);
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoCollInTimeRangeStandard);
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoCollInRofStandard);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "selUnanchoredMC")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selTVX);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "selMC")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selTVX);
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoTimeFrameBorder);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "selMCFull")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selTVX);
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoTimeFrameBorder);
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoSameBunchPileup);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "selMCFullPbPb")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selTVX);
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoCollInTimeRangeStandard);
+    eventSelectionMaskBits.push_back(JCollisionSel::selNoCollInRofStandard);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "sel7KINT7")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::sel7);
+    eventSelectionMaskBits.push_back(JCollisionSel::selKINT7);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "selUPCSingleGapA")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selUpcSingleGapA);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "selUPCSingleGapC")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selUpcSingleGapC);
+  }
+  if (eventSelectionMasksContainSelection(eventSelectionMasks, "selUPCDoubleGap")) {
+    eventSelectionMaskBits.push_back(JCollisionSel::selUpcDoubleGap);
+  }
+
+  return eventSelectionMaskBits;
+}
+
+template <typename T>
+uint16_t setEventSelectionBit(T const& collision, int upcSelectionResult = o2::aod::sgselector::TrueGap::NoGap)
 {
   uint16_t bit = 0;
   if (collision.sel8()) {
     SETBIT(bit, JCollisionSel::sel8);
-    if (collision.selection_bit(o2::aod::evsel::kNoSameBunchPileup) && collision.selection_bit(o2::aod::evsel::kIsGoodZvtxFT0vsPV)) {
-      SETBIT(bit, JCollisionSel::sel8Full);
-      if (collision.selection_bit(o2::aod::evsel::kNoCollInTimeRangeStandard)) {
-        SETBIT(bit, JCollisionSel::sel8FullPbPb);
-      }
-    }
   }
   if (collision.sel7()) {
     SETBIT(bit, JCollisionSel::sel7);
-    if (collision.alias_bit(kINT7)) {
-      SETBIT(bit, JCollisionSel::sel7KINT7);
-    }
+  }
+  if (collision.alias_bit(kINT7)) {
+    SETBIT(bit, JCollisionSel::selKINT7);
   }
   if (collision.selection_bit(o2::aod::evsel::kIsTriggerTVX)) {
     SETBIT(bit, JCollisionSel::selTVX);
-    SETBIT(bit, JCollisionSel::selUnanchoredMC);
-    if (collision.selection_bit(o2::aod::evsel::kNoTimeFrameBorder)) {
-      SETBIT(bit, JCollisionSel::selMC);
-      if (collision.selection_bit(o2::aod::evsel::kNoSameBunchPileup) && collision.selection_bit(o2::aod::evsel::kIsGoodZvtxFT0vsPV)) {
-        SETBIT(bit, JCollisionSel::selMCFull);
-        if (collision.selection_bit(o2::aod::evsel::kNoCollInTimeRangeStandard)) {
-          SETBIT(bit, JCollisionSel::selMCFullPbPb);
-        }
-      }
-    }
   }
+  if (collision.selection_bit(o2::aod::evsel::kNoTimeFrameBorder)) {
+    SETBIT(bit, JCollisionSel::selNoTimeFrameBorder);
+  }
+  if (collision.selection_bit(o2::aod::evsel::kNoITSROFrameBorder)) {
+    SETBIT(bit, JCollisionSel::selNoITSROFrameBorder);
+  }
+  if (collision.selection_bit(o2::aod::evsel::kNoSameBunchPileup)) {
+    SETBIT(bit, JCollisionSel::selNoSameBunchPileup);
+  }
+  if (collision.selection_bit(o2::aod::evsel::kIsGoodZvtxFT0vsPV)) {
+    SETBIT(bit, JCollisionSel::selIsGoodZvtxFT0vsPV);
+  }
+  if (collision.selection_bit(o2::aod::evsel::kNoCollInTimeRangeStandard)) {
+    SETBIT(bit, JCollisionSel::selNoCollInTimeRangeStandard);
+  }
+  if (collision.selection_bit(o2::aod::evsel::kNoCollInRofStandard)) {
+    SETBIT(bit, JCollisionSel::selNoCollInRofStandard);
+  }
+  if (upcSelectionResult == o2::aod::sgselector::SingleGapA) {
+    SETBIT(bit, JCollisionSel::selUpcSingleGapA);
+  }
+  if (upcSelectionResult == o2::aod::sgselector::SingleGapC) {
+    SETBIT(bit, JCollisionSel::selUpcSingleGapC);
+  }
+  if (upcSelectionResult == o2::aod::sgselector::DoubleGap) {
+    SETBIT(bit, JCollisionSel::selUpcDoubleGap);
+  }
+
   return bit;
 }
 
@@ -170,7 +279,7 @@ enum JTrigSel {
 };
 
 template <typename T>
-bool selectTrigger(T const& collision, std::vector<int> triggerMaskBits)
+bool selectTrigger(T const& collision, const std::vector<int>& triggerMaskBits)
 {
   if (triggerMaskBits.size() == 0) {
     return true;
@@ -187,12 +296,12 @@ template <typename T>
 bool selectTrigger(T const& collision, int triggerMaskBit)
 {
   if (triggerMaskBit == -1) {
-    return false;
+    return true;
   }
   return collision.triggerSel() & (1 << triggerMaskBit);
 }
 
-bool triggerMasksContainTrigger(std::string triggerMasks, std::string trigger)
+bool triggerMasksContainTrigger(const std::string& triggerMasks, std::string trigger)
 {
   size_t position = 0;
   while ((position = triggerMasks.find(trigger, position)) != std::string::npos) {
@@ -206,76 +315,76 @@ bool triggerMasksContainTrigger(std::string triggerMasks, std::string trigger)
   return false;
 }
 
-std::vector<int> initialiseTriggerMaskBits(std::string triggerMasks)
+std::vector<int> initialiseTriggerMaskBits(const std::string& triggerMasks)
 {
   std::vector<int> triggerMaskBits;
   if (triggerMasksContainTrigger(triggerMasks, "fJetChLowPt")) {
-    triggerMaskBits.push_back(JetChLowPt);
+    triggerMaskBits.push_back(JTrigSel::JetChLowPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fJetChHighPt")) {
-    triggerMaskBits.push_back(JetChHighPt);
+    triggerMaskBits.push_back(JTrigSel::JetChHighPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fTrackLowPt")) {
-    triggerMaskBits.push_back(TrackLowPt);
+    triggerMaskBits.push_back(JTrigSel::TrackLowPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fTrackHighPt")) {
-    triggerMaskBits.push_back(TrackHighPt);
+    triggerMaskBits.push_back(JTrigSel::TrackHighPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fJetD0ChLowPt")) {
-    triggerMaskBits.push_back(JetD0ChLowPt);
+    triggerMaskBits.push_back(JTrigSel::JetD0ChLowPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fJetD0ChHighPt")) {
-    triggerMaskBits.push_back(JetD0ChHighPt);
+    triggerMaskBits.push_back(JTrigSel::JetD0ChHighPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fJetLcChLowPt")) {
-    triggerMaskBits.push_back(JetLcChLowPt);
+    triggerMaskBits.push_back(JTrigSel::JetLcChLowPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fJetLcChHighPt")) {
-    triggerMaskBits.push_back(JetLcChHighPt);
+    triggerMaskBits.push_back(JTrigSel::JetLcChHighPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fEMCALReadout")) {
-    triggerMaskBits.push_back(EMCALReadout);
+    triggerMaskBits.push_back(JTrigSel::EMCALReadout);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fJetFullHighPt")) {
-    triggerMaskBits.push_back(JetFullHighPt);
+    triggerMaskBits.push_back(JTrigSel::JetFullHighPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fJetFullLowPt")) {
-    triggerMaskBits.push_back(JetFullLowPt);
+    triggerMaskBits.push_back(JTrigSel::JetFullLowPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fJetNeutralHighPt")) {
-    triggerMaskBits.push_back(JetNeutralHighPt);
+    triggerMaskBits.push_back(JTrigSel::JetNeutralHighPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fJetNeutralLowPt")) {
-    triggerMaskBits.push_back(JetNeutralLowPt);
+    triggerMaskBits.push_back(JTrigSel::JetNeutralLowPt);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fGammaVeryHighPtEMCAL")) {
-    triggerMaskBits.push_back(GammaVeryHighPtEMCAL);
+    triggerMaskBits.push_back(JTrigSel::GammaVeryHighPtEMCAL);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fGammaVeryHighPtDCAL")) {
-    triggerMaskBits.push_back(GammaVeryHighPtDCAL);
+    triggerMaskBits.push_back(JTrigSel::GammaVeryHighPtDCAL);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fGammaHighPtEMCAL")) {
-    triggerMaskBits.push_back(GammaHighPtEMCAL);
+    triggerMaskBits.push_back(JTrigSel::GammaHighPtEMCAL);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fGammaHighPtDCAL")) {
-    triggerMaskBits.push_back(GammaHighPtDCAL);
+    triggerMaskBits.push_back(JTrigSel::GammaHighPtDCAL);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fGammaLowPtEMCAL")) {
-    triggerMaskBits.push_back(GammaLowPtEMCAL);
+    triggerMaskBits.push_back(JTrigSel::GammaLowPtEMCAL);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fGammaLowPtDCAL")) {
-    triggerMaskBits.push_back(GammaLowPtDCAL);
+    triggerMaskBits.push_back(JTrigSel::GammaLowPtDCAL);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fGammaVeryLowPtEMCAL")) {
-    triggerMaskBits.push_back(GammaVeryLowPtEMCAL);
+    triggerMaskBits.push_back(JTrigSel::GammaVeryLowPtEMCAL);
   }
   if (triggerMasksContainTrigger(triggerMasks, "fGammaVeryLowPtDCAL")) {
-    triggerMaskBits.push_back(GammaVeryLowPtDCAL);
+    triggerMaskBits.push_back(JTrigSel::GammaVeryLowPtDCAL);
   }
   return triggerMaskBits;
 }
 
-uint64_t setTriggerSelectionBit(std::vector<bool> triggerDecisions)
+uint64_t setTriggerSelectionBit(const std::vector<bool>& triggerDecisions)
 {
   uint64_t bit = 0;
   for (std::vector<bool>::size_type i = 0; i < triggerDecisions.size(); i++) {
@@ -303,7 +412,7 @@ bool selectChargedTrigger(T const& collision, int triggerSelection)
   return (collision.chargedTriggerSel() & (1 << triggerSelection));
 }
 
-int initialiseChargedTriggerSelection(std::string triggerSelection)
+int initialiseChargedTriggerSelection(const std::string& triggerSelection)
 {
   if (triggerSelection == "jetChLowPt") {
     return JTrigSelCh::jetChLowPt;
@@ -368,7 +477,7 @@ bool selectFullTrigger(T const& collision, int triggerSelection)
   return (collision.fullTriggerSel() & (1 << triggerSelection));
 }
 
-int initialiseFullTriggerSelection(std::string triggerSelection)
+int initialiseFullTriggerSelection(const std::string& triggerSelection)
 {
   if (triggerSelection == "emcalReadout") {
     return JTrigSelFull::emcalReadout;
@@ -463,7 +572,7 @@ bool selectChargedHFTrigger(T const& collision, int triggerSelection)
   return (collision.chargedHFTriggerSel() & (1 << triggerSelection));
 }
 
-int initialiseChargedHFTriggerSelection(std::string triggerSelection)
+int initialiseChargedHFTriggerSelection(const std::string& triggerSelection)
 {
   if (triggerSelection == "jetD0ChLowPt") {
     return JTrigSelChHF::jetD0ChLowPt;
@@ -505,7 +614,9 @@ enum JTrackSel {
   globalTrack = 1,
   qualityTrack = 2,
   qualityTrackWDCA = 3,
-  hybridTrack = 4
+  hybridTrack = 4,
+  notBadMcTrack = 5,
+  embeddedTrack = 6 // this is for the future when embedding comes. Hopefully it will mean we dont have to remake the derived data. mcd tracks embedded need to have this bit set
 };
 
 template <typename T>
@@ -518,15 +629,21 @@ bool applyTrackKinematics(T const& track, float pTMin = 0.15, float pTMax = 100.
 }
 
 template <typename T>
-bool selectTrack(T const& track, int trackSelection)
+bool selectTrack(T const& track, int trackSelection, bool isEmbedded = false)
 {
+  if (!(track.trackSel() & (1 << JTrackSel::notBadMcTrack))) {
+    return false;
+  }
+  if (isEmbedded && !(track.trackSel() & (1 << JTrackSel::embeddedTrack))) { // will get rid of non embedded tracks
+    return false;
+  }
   if (trackSelection == -1) {
     return true;
   }
   return (track.trackSel() & (1 << trackSelection));
 }
 
-int initialiseTrackSelection(std::string trackSelection)
+int initialiseTrackSelection(const std::string& trackSelection)
 {
   if (trackSelection == "globalTracks") {
     return JTrackSel::globalTrack;
@@ -541,7 +658,7 @@ int initialiseTrackSelection(std::string trackSelection)
 }
 
 template <typename T>
-uint8_t setTrackSelectionBit(T const& track, float trackDCAZ, float maxDCAZ)
+uint8_t setTrackSelectionBit(T const& track, float trackDCAZ, float maxDCAZ, bool setNotBadMcTrack = true, bool isEmbedded = false)
 {
 
   uint8_t bit = 0;
@@ -560,6 +677,12 @@ uint8_t setTrackSelectionBit(T const& track, float trackDCAZ, float maxDCAZ)
   }
   if (track.trackCutFlagFb5()) {
     SETBIT(bit, JTrackSel::hybridTrack);
+  }
+  if (setNotBadMcTrack) {
+    SETBIT(bit, JTrackSel::notBadMcTrack);
+  }
+  if (isEmbedded) {
+    SETBIT(bit, JTrackSel::embeddedTrack);
   }
   return bit;
 }
@@ -582,7 +705,7 @@ float trackEnergy(T const& track, float mass = mPion)
 template <typename T>
 bool selectTrackDcaZ(T const& track, double dcaZmax = 99.)
 {
-  return abs(track.dcaZ()) < dcaZmax;
+  return std::abs(track.dcaZ()) < dcaZmax;
 }
 
 } // namespace jetderiveddatautilities

@@ -15,16 +15,31 @@
 #ifndef PWGDQ_CORE_MCSIGNALLIBRARY_H_
 #define PWGDQ_CORE_MCSIGNALLIBRARY_H_
 
-#include <string>
 #include "PWGDQ/Core/MCProng.h"
 #include "PWGDQ/Core/MCSignal.h"
+
+#include "rapidjson/document.h"
+
+#include <string>
+#include <vector>
 
 namespace o2::aod
 {
 namespace dqmcsignals
 {
 MCSignal* GetMCSignal(const char* signalName);
-}
+
+std::vector<MCSignal*> GetMCSignalsFromJSON(const char* json);
+
+template <typename T>
+bool ValidateJSONMCSignal(T sigJSON, const char* sigName);
+
+template <typename T>
+MCProng* ParseJSONMCProng(T prongJSON, const char* prongName);
+
+template <typename T>
+bool ValidateJSONMCProng(T prongJSON, const char* prongName);
+} // namespace dqmcsignals
 } // namespace o2::aod
 
 #endif // PWGDQ_CORE_MCSIGNALLIBRARY_H_

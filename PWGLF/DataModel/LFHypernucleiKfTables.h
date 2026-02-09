@@ -16,11 +16,14 @@
 #ifndef PWGLF_DATAMODEL_LFHYPERNUCLEIKFTABLES_H_
 #define PWGLF_DATAMODEL_LFHYPERNUCLEIKFTABLES_H_
 
-#include <cmath>
-#include "Framework/ASoA.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Common/DataModel/Centrality.h"
 #include "Common/Core/RecoDecay.h"
+#include "Common/DataModel/Centrality.h"
+#include "Common/DataModel/TrackSelectionTables.h"
+
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisDataModel.h>
+
+#include <cmath>
 
 namespace o2::aod
 {
@@ -45,6 +48,7 @@ DECLARE_SOA_COLUMN(Svx, svx, float);                            //!
 DECLARE_SOA_COLUMN(Svy, svy, float);                            //!
 DECLARE_SOA_COLUMN(Svz, svz, float);                            //!
 DECLARE_SOA_COLUMN(Occupancy, occupancy, int);                  //!
+DECLARE_SOA_COLUMN(RunNumber, runNumber, int);                  //!
 DECLARE_SOA_DYNAMIC_COLUMN(Pt, pt, [](float px, float py) { return RecoDecay::pt(std::array{px, py}); });
 DECLARE_SOA_DYNAMIC_COLUMN(Y, y, [](float E, float pz) { return 0.5 * std::log((E + pz) / (E - pz)); });
 DECLARE_SOA_DYNAMIC_COLUMN(Mass, mass, [](float E, float px, float py, float pz) { return std::sqrt(E * E - px * px - py * py - pz * pz); });
@@ -80,7 +84,8 @@ DECLARE_SOA_TABLE(HypKfColls, "AOD", "HYPKFCOLL",
                   cent::CentFT0A,
                   cent::CentFT0C,
                   cent::CentFT0M,
-                  hykfmc::Occupancy);
+                  hykfmc::Occupancy,
+                  hykfmc::RunNumber);
 using HypKfColl = HypKfColls::iterator;
 
 namespace hykftrk
@@ -102,14 +107,14 @@ DECLARE_SOA_DYNAMIC_COLUMN(Y, y, [](float pt, float eta, float mass) { return st
 DECLARE_SOA_DYNAMIC_COLUMN(Lambda, lambda, [](float eta) { return 1. / std::cosh(eta); });
 DECLARE_SOA_DYNAMIC_COLUMN(ItsNcluster, itsNcluster, [](uint32_t itsClusterSizes) {
   uint8_t n = 0;
-  for (uint8_t i = 0; i < 7; i++) {
+  for (uint8_t i = 0; i < 0x08; i++) {
     if (itsClusterSizes >> (4 * i) & 15)
       n++;
   }
   return n;
 });
 DECLARE_SOA_DYNAMIC_COLUMN(ItsFirstLayer, itsFirstLayer, [](uint32_t itsClusterSizes) {
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 0x08; i++) {
     if (itsClusterSizes >> (4 * i) & 15)
       return i;
   }
@@ -117,7 +122,7 @@ DECLARE_SOA_DYNAMIC_COLUMN(ItsFirstLayer, itsFirstLayer, [](uint32_t itsClusterS
 });
 DECLARE_SOA_DYNAMIC_COLUMN(ItsMeanClsSize, itsMeanClsSize, [](uint32_t itsClusterSizes) {
   int sum = 0, n = 0;
-  for (int i = 0; i < 8; i++) {
+  for (int i = 0; i < 0x08; i++) {
     sum += (itsClusterSizes >> (4 * i) & 15);
     if (itsClusterSizes >> (4 * i) & 15)
       n++;
@@ -194,9 +199,9 @@ DECLARE_SOA_DYNAMIC_COLUMN(Eta, eta, [](float px, float py, float pz) { return R
 DECLARE_SOA_DYNAMIC_COLUMN(Phi, phi, [](float px, float py) { return RecoDecay::phi(std::array{px, py}); });
 DECLARE_SOA_DYNAMIC_COLUMN(P, p, [](float px, float py, float pz) { return RecoDecay::p(px, py, pz); }); //
 DECLARE_SOA_DYNAMIC_COLUMN(Y, y, [](float px, float py, float pz, float mass) { return RecoDecay::y(std::array{px, py, pz}, mass); });
-DECLARE_SOA_DYNAMIC_COLUMN(McTrue, mcTrue, [](int hypKfMcPartId) { return hypKfMcPartId > 0; });
+DECLARE_SOA_DYNAMIC_COLUMN(McTrue, mcTrue, [](int hypKfMcPartId) { return hypKfMcPartId >= 0; });
 DECLARE_SOA_DYNAMIC_COLUMN(IsMatter, isMatter, [](int8_t species) { return species > 0; });
-DECLARE_SOA_DYNAMIC_COLUMN(Cascade, cascade, [](int hypDaughter) { return hypDaughter > 0; });
+DECLARE_SOA_DYNAMIC_COLUMN(Cascade, cascade, [](int hypDaughter) { return hypDaughter >= 0; });
 } // namespace hykfhyp
 
 DECLARE_SOA_TABLE(HypKfHypNucs, "AOD", "HYPKFHYPNUC",

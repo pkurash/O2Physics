@@ -14,20 +14,22 @@
 /// \author Luca Micheletti <luca.micheletti@to.infn.it>, INFN
 /// \author Fabrizio Grosa <fabrizio.grosa@cern.ch>, CERN
 
-#include <string>
-
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/HistogramRegistry.h"
-#include "Framework/runDataProcessing.h"
-
-#include "Common/Core/RecoDecay.h"
-
+#include "PWGDQ/DataModel/ReducedInfoTables.h"
 #include "PWGHF/Core/HfHelper.h"
 #include "PWGHF/DataModel/CandidateReconstructionTables.h"
 #include "PWGHF/DataModel/CandidateSelectionTables.h"
 #include "PWGHF/Utils/utilsAnalysis.h"
-#include "PWGDQ/DataModel/ReducedInfoTables.h"
+
+#include "Common/Core/RecoDecay.h"
+
+#include "Framework/AnalysisDataModel.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/HistogramRegistry.h"
+#include "Framework/runDataProcessing.h"
+
+#include <memory>
+#include <string>
+#include <vector>
 
 using namespace o2;
 using namespace o2::analysis;
@@ -97,15 +99,16 @@ struct taskJPsiHf {
     float deltaRap = -999;
     float deltaPhi = -999;
 
-    for (auto& dilepton : dileptons) {
+    for (auto const& dilepton : dileptons) {
       ptDilepton = RecoDecay::pt(dilepton.px(), dilepton.py());
       rapDilepton = RecoDecay::y(std::array{dilepton.px(), dilepton.py(), dilepton.pz()}, constants::physics::MassJPsi);
       phiDilepton = RecoDecay::phi(dilepton.px(), dilepton.py());
 
-      for (auto& dmeson : dmesons) {
+      for (auto const& dmeson : dmesons) {
         ptDmeson = RecoDecay::pt(dmeson.px(), dmeson.py());
         phiDmeson = RecoDecay::phi(dmeson.px(), dmeson.py());
-        deltaPhi = RecoDecay::constrainAngle(phiDilepton - phiDmeson, -o2::constants::math::PIHalf);
+        float absDeltaPhiRaw = std::abs(phiDilepton - phiDmeson);
+        deltaPhi = (absDeltaPhiRaw < o2::constants::math::PI) ? absDeltaPhiRaw : o2::constants::math::TwoPI - absDeltaPhiRaw;
 
         auto ptBinDmesForBdt = findBin(binsPtDmesForBdt, ptDmeson);
         if (ptBinDmesForBdt == -1) {

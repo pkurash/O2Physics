@@ -80,8 +80,18 @@ o2physics_add_dpl_workflow(qa-tracksplitting
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
     COMPONENT_NAME Analysis)
 
+o2physics_add_dpl_workflow(unit-test-for-reconstruction
+    SOURCES unitTestForReconstruction.cxx
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+    COMPONENT_NAME Analysis)
+
 o2physics_add_dpl_workflow(tag-and-probe-dmesons
     SOURCES tagAndProbeDmesons.cxx
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2::DetectorsVertexing O2Physics::MLCore
+    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(derived-data-creator-d0-calibration
+    SOURCES derivedDataCreatorD0Calibration.cxx
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2Physics::AnalysisCore O2::DCAFitter O2Physics::MLCore
     COMPONENT_NAME Analysis)
 

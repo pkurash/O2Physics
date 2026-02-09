@@ -10,6 +10,7 @@
 # or submit itself to any jurisdiction.
 
 add_subdirectory(Duplicates)
+add_subdirectory(Substructure)
 
 if(FastJet_FOUND)
 
@@ -33,13 +34,38 @@ o2physics_add_dpl_workflow(jet-matching-mc-d0-ch
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
                     COMPONENT_NAME Analysis)
 
+o2physics_add_dpl_workflow(jet-matching-mc-dplus-ch
+                    SOURCES jetMatchingMCDplusCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(jet-matching-mc-ds-ch
+                    SOURCES jetMatchingMCDsCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(jet-matching-mc-dstar-ch
+                    SOURCES jetMatchingMCDstarCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
 o2physics_add_dpl_workflow(jet-matching-mc-lc-ch
                     SOURCES jetMatchingMCLcCharged.cxx
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
                     COMPONENT_NAME Analysis)
 
+o2physics_add_dpl_workflow(jet-matching-mc-b0-ch
+                    SOURCES jetMatchingMCB0Charged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
 o2physics_add_dpl_workflow(jet-matching-mc-bplus-ch
                     SOURCES jetMatchingMCBplusCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(jet-matching-mc-xictoxipipi-ch
+                    SOURCES jetMatchingMCXicToXiPiPiCharged.cxx
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
                     COMPONENT_NAME Analysis)
 
@@ -63,13 +89,38 @@ o2physics_add_dpl_workflow(jet-matching-mc-sub-d0-ch
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
                     COMPONENT_NAME Analysis)
 
+o2physics_add_dpl_workflow(jet-matching-mc-sub-dplus-ch
+                    SOURCES jetMatchingMCSubDplusCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(jet-matching-mc-sub-ds-ch
+                    SOURCES jetMatchingMCSubDsCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(jet-matching-mc-sub-dstar-ch
+                    SOURCES jetMatchingMCSubDstarCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
 o2physics_add_dpl_workflow(jet-matching-mc-sub-lc-ch
                     SOURCES jetMatchingMCSubLcCharged.cxx
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
                     COMPONENT_NAME Analysis)
 
+o2physics_add_dpl_workflow(jet-matching-mc-sub-b0-ch
+                    SOURCES jetMatchingMCSubB0Charged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
 o2physics_add_dpl_workflow(jet-matching-mc-sub-bplus-ch
                     SOURCES jetMatchingMCSubBplusCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(jet-matching-mc-sub-xictoxipipi-ch
+                    SOURCES jetMatchingMCSubXicToXiPiPiCharged.cxx
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
                     COMPONENT_NAME Analysis)
 
@@ -88,6 +139,21 @@ o2physics_add_dpl_workflow(jet-matching-sub-d0-ch
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
                     COMPONENT_NAME Analysis)
 
+o2physics_add_dpl_workflow(jet-matching-sub-dplus-ch
+                    SOURCES jetMatchingSubDplusCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(jet-matching-sub-ds-ch
+                    SOURCES jetMatchingSubDsCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(jet-matching-sub-dstar-ch
+                    SOURCES jetMatchingSubDstarCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
 o2physics_add_dpl_workflow(jet-matching-sub-lc-ch
                     SOURCES jetMatchingSubLcCharged.cxx
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
@@ -95,6 +161,16 @@ o2physics_add_dpl_workflow(jet-matching-sub-lc-ch
 
 o2physics_add_dpl_workflow(jet-matching-sub-bplus-ch
                     SOURCES jetMatchingSubBplusCharged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(jet-matching-sub-b0-ch
+                    SOURCES jetMatchingSubB0Charged.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(jet-matching-sub-xictoxipipi-ch
+                    SOURCES jetMatchingSubXicToXiPiPiCharged.cxx
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::PWGJECore O2Physics::AnalysisCore O2::FrameworkPhysicsSupport
                     COMPONENT_NAME Analysis)
 

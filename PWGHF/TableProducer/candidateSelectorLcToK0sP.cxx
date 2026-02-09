@@ -17,20 +17,37 @@
 ///         Daniel Samitz, <daniel.samitz@cern.ch>, Vienna
 ///         Elisa Meninno, <elisa.meninno@cern.ch>, Vienna
 
-#include <string>
-#include <vector>
-
-#include "CommonConstants/PhysicsConstants.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/runDataProcessing.h"
-
-#include "Common/Core/TrackSelectorPID.h"
-
 #include "PWGHF/Core/HfHelper.h"
-#include "PWGHF/Core/HfMlResponse.h"
 #include "PWGHF/Core/HfMlResponseLcToK0sP.h"
+#include "PWGHF/Core/SelectorCuts.h"
+#include "PWGHF/DataModel/AliasTables.h"
 #include "PWGHF/DataModel/CandidateReconstructionTables.h"
 #include "PWGHF/DataModel/CandidateSelectionTables.h"
+
+#include "Common/Core/TrackSelectorPID.h"
+#include "Common/DataModel/PIDResponseCombined.h"
+
+#include <CCDB/CcdbApi.h>
+#include <CommonConstants/PhysicsConstants.h>
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Array2D.h>
+#include <Framework/Configurable.h>
+#include <Framework/HistogramRegistry.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/Logger.h>
+#include <Framework/runDataProcessing.h>
+
+#include <TH1.h>
+#include <TH2.h>
+#include <TString.h>
+
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
 
 using namespace o2;
 using namespace o2::analysis;
@@ -38,6 +55,7 @@ using namespace o2::framework;
 
 struct HfCandidateSelectorLcToK0sP {
   Produces<aod::HfSelLcToK0sP> hfSelLcToK0sPCandidate;
+  Produces<aod::HfMlLcToK0sP> hfMlLcToK0sPCandidate;
 
   Configurable<double> ptCandMin{"ptCandMin", 0., "Lower bound of candidate pT"};
   Configurable<double> ptCandMax{"ptCandMax", 50., "Upper bound of candidate pT"};
@@ -59,13 +77,13 @@ struct HfCandidateSelectorLcToK0sP {
   Configurable<double> probBayesMinHighP{"probBayesMinHighP", 0.8, "min. Bayes probability for bachelor at high p [%]"};
   // topological cuts
   Configurable<std::vector<double>> binsPt{"binsPt", std::vector<double>{hf_cuts_lc_to_k0s_p::vecBinsPt}, "pT bin limits"};
-  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_lc_to_k0s_p::cuts[0], hf_cuts_lc_to_k0s_p::nBinsPt, hf_cuts_lc_to_k0s_p::nCutVars, hf_cuts_lc_to_k0s_p::labelsPt, hf_cuts_lc_to_k0s_p::labelsCutVar}, "Lc candidate selection per pT bin"};
+  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_lc_to_k0s_p::Cuts[0], hf_cuts_lc_to_k0s_p::NBinsPt, hf_cuts_lc_to_k0s_p::NCutVars, hf_cuts_lc_to_k0s_p::labelsPt, hf_cuts_lc_to_k0s_p::labelsCutVar}, "Lc candidate selection per pT bin"};
   // ML inference
   Configurable<bool> applyMl{"applyMl", false, "Flag to apply ML selections"};
   Configurable<std::vector<double>> binsPtMl{"binsPtMl", std::vector<double>{hf_cuts_ml::vecBinsPt}, "pT bin limits for ML application"};
   Configurable<std::vector<int>> cutDirMl{"cutDirMl", std::vector<int>{hf_cuts_ml::vecCutDir}, "Whether to reject score values greater or smaller than the threshold"};
-  Configurable<LabeledArray<double>> cutsMl{"cutsMl", {hf_cuts_ml::cuts[0], hf_cuts_ml::nBinsPt, hf_cuts_ml::nCutScores, hf_cuts_ml::labelsPt, hf_cuts_ml::labelsCutScore}, "ML selections per pT bin"};
-  Configurable<int> nClassesMl{"nClassesMl", static_cast<int>(hf_cuts_ml::nCutScores), "Number of classes in ML model"};
+  Configurable<LabeledArray<double>> cutsMl{"cutsMl", {hf_cuts_ml::Cuts[0], hf_cuts_ml::NBinsPt, hf_cuts_ml::NCutScores, hf_cuts_ml::labelsPt, hf_cuts_ml::labelsCutScore}, "ML selections per pT bin"};
+  Configurable<int> nClassesMl{"nClassesMl", static_cast<int>(hf_cuts_ml::NCutScores), "Number of classes in ML model"};
   Configurable<std::vector<std::string>> namesInputFeatures{"namesInputFeatures", std::vector<std::string>{"feature1", "feature2"}, "Names of ML model input features"};
   // CCDB configuration
   Configurable<std::string> ccdbUrl{"ccdbUrl", "http://alice-ccdb.cern.ch", "url of the ccdb repository"};
@@ -74,11 +92,11 @@ struct HfCandidateSelectorLcToK0sP {
   Configurable<int64_t> timestampCCDB{"timestampCCDB", -1, "timestamp of the ONNX file for ML model used to query in CCDB"};
   Configurable<bool> loadModelsFromCCDB{"loadModelsFromCCDB", false, "Flag to enable or disable the loading of models from CCDB"};
 
-  HfHelper hfHelper;
   TrackSelectorPr selectorProtonLowP;
   TrackSelectorPr selectorProtonHighP;
 
   o2::analysis::HfMlResponseLcToK0sP<float> hfMlResponse;
+  std::vector<float> outputMl;
 
   o2::ccdb::CcdbApi ccdbApi;
 
@@ -123,8 +141,8 @@ struct HfCandidateSelectorLcToK0sP {
       hfMlResponse.init();
 
       // load histograms for ML score
-      AxisSpec axisScore = {100, 0, 1, "score"};
-      AxisSpec axisBinsPt = {binsPtMl, "#it{p}_{T} (GeV/#it{c})"};
+      AxisSpec const axisScore = {100, 0, 1, "score"};
+      AxisSpec const axisBinsPt = {binsPtMl, "#it{p}_{T} (GeV/#it{c})"};
       for (int classMl = 0; classMl < nClassesMl; classMl++) {
         hModelScore.push_back(registry.add<TH1>(Form("hMlScoreClass%d", classMl), "Model score distribution for Lc;Model score;counts", HistType::kTH1F, {axisScore}));
         hModelScoreVsPtCand.push_back(registry.add<TH2>(Form("hMlScoreClass%dVsPtCand", classMl), "Model score distribution for Lc;Model score;counts", HistType::kTH2F, {axisScore, axisBinsPt}));
@@ -139,13 +157,17 @@ struct HfCandidateSelectorLcToK0sP {
   bool selectionTopol(const T& hfCandCascade)
   {
     auto candPt = hfCandCascade.pt();
-    int ptBin = findBin(binsPt, candPt);
+    int const ptBin = findBin(binsPt, candPt);
     if (ptBin == -1) {
       return false;
     }
 
     if (candPt < ptCandMin || candPt >= ptCandMax) {
       return false; // check that the candidate pT is within the analysis range
+    }
+
+    if (std::abs(HfHelper::invMassLcToK0sP(hfCandCascade) - o2::constants::physics::MassLambdaCPlus) > cuts->get(ptBin, "mLc")) {
+      return false; // mass of the Lambda c
     }
 
     if (std::abs(hfCandCascade.mK0Short() - o2::constants::physics::MassK0Short) > cuts->get(ptBin, "mK0s")) {
@@ -199,9 +221,8 @@ struct HfCandidateSelectorLcToK0sP {
   {
     if (track.p() < pPidThreshold) {
       return selectorProtonLowP.statusTpcAndTof(track) == TrackSelectorPID::Accepted;
-    } else {
-      return selectorProtonHighP.statusTpcAndTof(track) == TrackSelectorPID::Accepted;
     }
+    return selectorProtonHighP.statusTpcAndTof(track) == TrackSelectorPID::Accepted;
   }
 
   template <typename T>
@@ -213,20 +234,18 @@ struct HfCandidateSelectorLcToK0sP {
 
     if (track.p() < pPidThreshold) {
       return selectorProtonLowP.statusBayesProb(track) == TrackSelectorPID::Accepted;
-    } else {
-      return selectorProtonHighP.statusBayesProb(track) == TrackSelectorPID::Accepted;
     }
+    return selectorProtonHighP.statusBayesProb(track) == TrackSelectorPID::Accepted;
   }
 
   template <typename T, typename U>
-  bool selectionMl(const T& hfCandCascade, const U& bach)
+  bool selectionMl(const T& hfCandCascade, const U& bach, std::vector<float>& outputMl)
   {
 
     auto ptCand = hfCandCascade.pt();
     std::vector<float> inputFeatures = hfMlResponse.getInputFeatures(hfCandCascade, bach);
-    std::vector<float> outputMl = {};
 
-    bool isSelectedMl = hfMlResponse.isSelectedMl(inputFeatures, ptCand, outputMl);
+    bool const isSelectedMl = hfMlResponse.isSelectedMl(inputFeatures, ptCand, outputMl);
 
     for (int classMl = 0; classMl < nClassesMl; classMl++) {
       hModelScore[classMl]->Fill(outputMl[classMl]);
@@ -245,26 +264,37 @@ struct HfCandidateSelectorLcToK0sP {
       const auto& bach = candidate.prong0_as<TracksSel>(); // bachelor track
 
       statusLc = 0;
+      outputMl.clear();
 
       // implement filter bit 4 cut - should be done before this task at the track selection level
       // need to add special cuts (additional cuts on decay length and d0 norm)
       if (!selectionTopol(candidate)) {
         hfSelLcToK0sPCandidate(statusLc);
+        if (applyMl) {
+          hfMlLcToK0sPCandidate(outputMl);
+        }
         continue;
       }
 
       if (!selectionStandardPID(bach)) {
         hfSelLcToK0sPCandidate(statusLc);
+        if (applyMl) {
+          hfMlLcToK0sPCandidate(outputMl);
+        }
         continue;
       }
 
-      if (applyMl && !selectionMl(candidate, bach)) {
-        hfSelLcToK0sPCandidate(statusLc);
-        continue;
+      if (applyMl) {
+        bool const isSelectedMlLcToK0sP = selectionMl(candidate, bach, outputMl);
+        hfMlLcToK0sPCandidate(outputMl);
+
+        if (!isSelectedMlLcToK0sP) {
+          hfSelLcToK0sPCandidate(statusLc);
+          continue;
+        }
       }
 
       statusLc = 1;
-
       hfSelLcToK0sPCandidate(statusLc);
     }
   }
@@ -279,24 +309,35 @@ struct HfCandidateSelectorLcToK0sP {
       const auto& bach = candidate.prong0_as<TracksSelBayes>(); // bachelor track
 
       statusLc = 0;
+      outputMl.clear();
 
       if (!selectionTopol(candidate)) {
         hfSelLcToK0sPCandidate(statusLc);
+        if (applyMl) {
+          hfMlLcToK0sPCandidate(outputMl);
+        }
         continue;
       }
 
       if (!selectionBayesPID(bach)) {
         hfSelLcToK0sPCandidate(statusLc);
+        if (applyMl) {
+          hfMlLcToK0sPCandidate(outputMl);
+        }
         continue;
       }
 
-      if (applyMl && !selectionMl(candidate, bach)) {
-        hfSelLcToK0sPCandidate(statusLc);
-        continue;
+      if (applyMl) {
+        bool const isSelectedMlLcToK0sP = selectionMl(candidate, bach, outputMl);
+        hfMlLcToK0sPCandidate(outputMl);
+
+        if (!isSelectedMlLcToK0sP) {
+          hfSelLcToK0sPCandidate(statusLc);
+          continue;
+        }
       }
 
       statusLc = 1;
-
       hfSelLcToK0sPCandidate(statusLc);
     }
   }

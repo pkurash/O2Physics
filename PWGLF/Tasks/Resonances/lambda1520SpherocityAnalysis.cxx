@@ -13,18 +13,21 @@
 /// \brief Invariant Mass Reconstruction of Lambda(1520) Resonance
 /// \author Yash Patley <yash.patley@cern.ch>
 
+#include "PWGLF/DataModel/LFResonanceTables.h"
+
+#include "Common/Core/RecoDecay.h"
+#include "Common/DataModel/Centrality.h"
+#include "Common/DataModel/EventSelection.h"
+
+#include "CommonConstants/PhysicsConstants.h"
+#include "Framework/ASoAHelpers.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/runDataProcessing.h"
+
 #include <TLorentzVector.h>
 #include <TRandom.h>
 
-#include "Common/DataModel/PIDResponse.h"
-#include "Common/DataModel/Centrality.h"
-#include "Common/DataModel/EventSelection.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/ASoAHelpers.h"
-#include "Framework/runDataProcessing.h"
-#include "PWGLF/DataModel/LFResonanceTables.h"
-#include "CommonConstants/PhysicsConstants.h"
-#include "Common/Core/RecoDecay.h"
+#include <vector>
 
 using namespace o2;
 using namespace o2::framework;
@@ -515,7 +518,7 @@ struct lambdaAnalysis {
     }
   }
 
-  using resoCols = aod::ResoCollisions;
+  using resoCols = soa::Join<aod::ResoCollisions, aod::ResoSpheroCollisions>;
   using resoTracks = aod::ResoTracks;
 
   void processData(resoCols::iterator const& collision, resoTracks const& tracks)

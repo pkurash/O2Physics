@@ -9,31 +9,47 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-/// \file candidateSelectorToOmegaKa.cxx
+/// \file candidateSelectorOmegac0ToOmegaKa.cxx
 /// \brief Omegac0 → Omega Ka selection task
 /// \author Federica Zanone <federica.zanone@cern.ch>, Heidelberg University
 
-#include "CommonConstants/PhysicsConstants.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/runDataProcessing.h"
-
-#include "Common/Core/TrackSelection.h"
-#include "Common/Core/TrackSelectorPID.h"
-
+#include "PWGHF/DataModel/AliasTables.h"
 #include "PWGHF/DataModel/CandidateReconstructionTables.h"
 #include "PWGHF/DataModel/CandidateSelectionTables.h"
 #include "PWGHF/Utils/utilsAnalysis.h"
+
+#include "Common/Core/RecoDecay.h"
+#include "Common/Core/TrackSelectorPID.h"
+
+#include <CommonConstants/PhysicsConstants.h>
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Configurable.h>
+#include <Framework/HistogramRegistry.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/Logger.h>
+#include <Framework/runDataProcessing.h>
+
+#include <TH1.h>
+
+#include <Rtypes.h>
+
+#include <cstdint>
+#include <cstdlib>
 
 using namespace o2;
 using namespace o2::aod;
 using namespace o2::framework;
 using namespace o2::analysis;
 
-enum pidInfoStored {
-  kPiFromLam = 0,
-  kPrFromLam,
-  kKaFromCasc,
-  kKaFromCharm
+enum PidInfoStored {
+  PiFromLam = 0,
+  PrFromLam,
+  KaFromCasc,
+  KaFromCharm
 };
 
 /// Struct for applying Omegac0 -> Omega pi selection cuts
@@ -216,7 +232,7 @@ struct HfCandidateSelectorToOmegaKa {
       auto trackPiFromLam = trackV0NegDau;
       auto trackPrFromLam = trackV0PosDau;
 
-      int8_t signDecay = candidate.signDecay(); // sign of pi <- cascade
+      int8_t const signDecay = candidate.signDecay(); // sign of pi <- cascade
 
       if (signDecay > 0) {
         trackPiFromLam = trackV0PosDau;
@@ -227,10 +243,10 @@ struct HfCandidateSelectorToOmegaKa {
       }
 
       // eta selection
-      double etaV0PosDau = candidate.etaV0PosDau();
-      double etaV0NegDau = candidate.etaV0NegDau();
-      double etaKaFromCasc = candidate.etaBachFromCasc();
-      double etaKaFromCharmBaryon = candidate.etaBachFromCharmBaryon();
+      double const etaV0PosDau = candidate.etaV0PosDau();
+      double const etaV0NegDau = candidate.etaV0NegDau();
+      double const etaKaFromCasc = candidate.etaBachFromCasc();
+      double const etaKaFromCharmBaryon = candidate.etaBachFromCharmBaryon();
       if (std::abs(etaV0PosDau) > etaTrackLFDauMax) {
         resultSelections = false;
         registry.fill(HIST("hSelEtaPosV0Dau"), 0);
@@ -352,8 +368,8 @@ struct HfCandidateSelectorToOmegaKa {
       }
 
       // pT selections
-      double ptKaFromCasc = RecoDecay::sqrtSumOfSquares(candidate.pxBachFromCasc(), candidate.pyBachFromCasc());
-      double ptKaFromCharmBaryon = RecoDecay::sqrtSumOfSquares(candidate.pxBachFromCharmBaryon(), candidate.pyBachFromCharmBaryon());
+      double const ptKaFromCasc = RecoDecay::sqrtSumOfSquares(candidate.pxBachFromCasc(), candidate.pyBachFromCasc());
+      double const ptKaFromCharmBaryon = RecoDecay::sqrtSumOfSquares(candidate.pxBachFromCharmBaryon(), candidate.pyBachFromCharmBaryon());
       if (std::abs(ptKaFromCasc) < ptKaFromCascMin) {
         resultSelections = false;
         registry.fill(HIST("hSelPtKaFromCasc"), 0);
@@ -423,28 +439,28 @@ struct HfCandidateSelectorToOmegaKa {
       }
 
       if (trackPiFromLam.hasTPC()) {
-        SETBIT(infoTpcStored, kPiFromLam);
+        SETBIT(infoTpcStored, PiFromLam);
       }
       if (trackPrFromLam.hasTPC()) {
-        SETBIT(infoTpcStored, kPrFromLam);
+        SETBIT(infoTpcStored, PrFromLam);
       }
       if (trackKaFromCasc.hasTPC()) {
-        SETBIT(infoTpcStored, kKaFromCasc);
+        SETBIT(infoTpcStored, KaFromCasc);
       }
       if (trackKaFromCharm.hasTPC()) {
-        SETBIT(infoTpcStored, kKaFromCharm);
+        SETBIT(infoTpcStored, KaFromCharm);
       }
       if (trackPiFromLam.hasTOF()) {
-        SETBIT(infoTofStored, kPiFromLam);
+        SETBIT(infoTofStored, PiFromLam);
       }
       if (trackPrFromLam.hasTOF()) {
-        SETBIT(infoTofStored, kPrFromLam);
+        SETBIT(infoTofStored, PrFromLam);
       }
       if (trackKaFromCasc.hasTOF()) {
-        SETBIT(infoTofStored, kKaFromCasc);
+        SETBIT(infoTofStored, KaFromCasc);
       }
       if (trackKaFromCharm.hasTOF()) {
-        SETBIT(infoTofStored, kKaFromCharm);
+        SETBIT(infoTofStored, KaFromCharm);
       }
 
       if (usePidTpcOnly) {
@@ -485,9 +501,9 @@ struct HfCandidateSelectorToOmegaKa {
       bool statusInvMassCascade = false;
       bool statusInvMassCharmBaryon = false;
 
-      double invMassLambda = candidate.invMassLambda();
-      double invMassCascade = candidate.invMassCascade();
-      double invMassCharmBaryon = candidate.invMassCharmBaryon();
+      double const invMassLambda = candidate.invMassLambda();
+      double const invMassCascade = candidate.invMassCascade();
+      double const invMassCharmBaryon = candidate.invMassCharmBaryon();
 
       if (std::abs(invMassLambda - o2::constants::physics::MassLambda0) < v0MassWindow) {
         statusInvMassLambda = true;
@@ -567,7 +583,7 @@ struct HfCandidateSelectorToOmegaKa {
       }
     }
   } // end process
-};  // end struct
+}; // end struct
 
 WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
 {

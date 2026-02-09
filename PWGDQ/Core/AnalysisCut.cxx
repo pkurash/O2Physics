@@ -11,6 +11,12 @@
 
 #include "PWGDQ/Core/AnalysisCut.h"
 
+#include <iostream>
+#include <vector>
+
+using std::cout;
+using std::endl;
+
 ClassImp(AnalysisCut);
 
 std::vector<int> AnalysisCut::fgUsedVars = {};
@@ -38,4 +44,21 @@ AnalysisCut& AnalysisCut::operator=(const AnalysisCut& c)
 }
 
 //____________________________________________________________________________
+AnalysisCut::AnalysisCut(const AnalysisCut& c) : TNamed(c)
+{
+  //
+  // copy constructor
+  //
+  if (this != &c) {
+    fCuts = c.fCuts;
+  }
+}
+
+//____________________________________________________________________________
 AnalysisCut::~AnalysisCut() = default;
+
+//____________________________________________________________________________
+void AnalysisCut::PrintCuts()
+{
+  cout << "**************** AnalysisCut::PrintCuts" << endl;
+}

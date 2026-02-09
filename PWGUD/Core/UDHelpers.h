@@ -16,21 +16,21 @@
 #ifndef PWGUD_CORE_UDHELPERS_H_
 #define PWGUD_CORE_UDHELPERS_H_
 
-#include <vector>
-#include <bitset>
-#include "TLorentzVector.h"
-#include "Framework/Logger.h"
-#include "DataFormatsFT0/Digit.h"
-#include "DataFormatsFIT/Triggers.h"
-#include "CommonConstants/LHCConstants.h"
+#include "PWGUD/Core/DGCutparHolder.h"
+#include "PWGUD/Core/UPCHelpers.h"
+
 #include "Common/DataModel/EventSelection.h"
 #include "Common/DataModel/TrackSelectionTables.h"
-#include "Common/DataModel/PIDResponse.h"
-#include "PWGUD/Core/UPCHelpers.h"
-#include "PWGUD/Core/DGCutparHolder.h"
 
-using namespace o2;
-using namespace o2::framework;
+#include "CommonConstants/LHCConstants.h"
+#include "DataFormatsFIT/Triggers.h"
+#include "DataFormatsFT0/Digit.h"
+#include "Framework/Logger.h"
+
+#include "TLorentzVector.h"
+
+#include <bitset>
+#include <vector>
 
 // namespace with helpers for UD framework
 namespace udhelpers
@@ -42,7 +42,7 @@ template <bool onlyPV, typename std::enable_if<onlyPV>::type* = nullptr, typenam
 int8_t netCharge(TCs tracks)
 {
   int8_t nch = 0;
-  for (auto track : tracks) {
+  for (const auto& track : tracks) {
     if (track.isPVContributor()) {
       nch += track.sign();
     }
@@ -55,7 +55,7 @@ template <bool onlyPV, typename std::enable_if<!onlyPV>::type* = nullptr, typena
 int8_t netCharge(TCs tracks)
 {
   int8_t nch = 0;
-  for (auto track : tracks) {
+  for (const auto& track : tracks) {
     nch += track.sign();
   }
   return nch;
@@ -67,7 +67,7 @@ template <bool onlyPV, typename std::enable_if<onlyPV>::type* = nullptr, typenam
 float rPVtrwTOF(TCs tracks, int nPVTracks)
 {
   float rpvrwTOF = 0.;
-  for (auto& track : tracks) {
+  for (const auto& track : tracks) {
     if (track.isPVContributor() && track.hasTOF()) {
       rpvrwTOF += 1.;
     }
@@ -83,7 +83,7 @@ template <bool onlyPV, typename std::enable_if<!onlyPV>::type* = nullptr, typena
 float rPVtrwTOF(TCs tracks, int nPVTracks)
 {
   float rpvrwTOF = 0.;
-  for (auto& track : tracks) {
+  for (const auto& track : tracks) {
     if (track.hasTOF()) {
       rpvrwTOF += 1.;
     }
@@ -115,14 +115,14 @@ T compatibleBCs(B const& bc, uint64_t const& meanBC, int const& deltaBC, T const
   auto bcIter = bcs.iteratorAt(bc.globalIndex());
 
   // range of BCs to consider
-  uint64_t minBC = (uint64_t)deltaBC < meanBC ? meanBC - (uint64_t)deltaBC : 0;
-  uint64_t maxBC = meanBC + (uint64_t)deltaBC;
+  uint64_t minBC = static_cast<uint64_t>(deltaBC) < meanBC ? meanBC - static_cast<uint64_t>(deltaBC) : 0;
+  uint64_t maxBC = meanBC + static_cast<uint64_t>(deltaBC);
   LOGF(debug, "  minBC %d maxBC %d bcIterator %d (%d) #BCs %d", minBC, maxBC, bcIter.globalBC(), bcIter.globalIndex(), bcs.size());
 
   // check [min,max]BC to overlap with [bcs.iteratorAt([0,bcs.size() - 1])
   if (maxBC < bcs.iteratorAt(0).globalBC() || minBC > bcs.iteratorAt(bcs.size() - 1).globalBC()) {
-    LOGF(info, "<compatibleBCs> No overlap of [%d, %d] and [%d, %d]", minBC, maxBC, bcs.iteratorAt(0).globalBC(), bcs.iteratorAt(bcs.size() - 1).globalBC());
-    return T{{bcs.asArrowTable()->Slice(0, 0)}, (uint64_t)0};
+    LOGF(debug, "<compatibleBCs> No overlap of [%d, %d] and [%d, %d]", minBC, maxBC, bcs.iteratorAt(0).globalBC(), bcs.iteratorAt(bcs.size() - 1).globalBC());
+    return T{{bcs.asArrowTable()->Slice(0, 0)}, static_cast<uint64_t>(0)};
   }
 
   // find slice of BCs table with BC in [minBC, maxBC]
@@ -156,7 +156,7 @@ T compatibleBCs(B const& bc, uint64_t const& meanBC, int const& deltaBC, T const
   }
 
   // create bc slice
-  T bcslice{{bcs.asArrowTable()->Slice(minBCId, maxBCId - minBCId + 1)}, (uint64_t)minBCId};
+  T bcslice{{bcs.asArrowTable()->Slice(minBCId, maxBCId - minBCId + 1)}, static_cast<uint64_t>(minBCId)};
   bcs.copyIndexBindings(bcslice);
   LOGF(debug, "  size of slice %d", bcslice.size());
   return bcslice;
@@ -171,7 +171,7 @@ T compatibleBCs(C const& collision, int ndt, T const& bcs, int nMinBCs = 7)
 
   // return if collisions has no associated BC
   if (!collision.has_foundBC() || ndt < 0) {
-    return T{{bcs.asArrowTable()->Slice(0, 0)}, (uint64_t)0};
+    return T{{bcs.asArrowTable()->Slice(0, 0)}, static_cast<uint64_t>(0)};
   }
 
   // get associated BC
@@ -196,7 +196,7 @@ template <typename T>
 T compatibleBCs(uint64_t const& meanBC, int const& deltaBC, T const& bcs)
 {
   // find BC with globalBC ~ meanBC
-  uint64_t ind = (uint64_t)(bcs.size() / 2);
+  uint64_t ind = static_cast<uint64_t>(bcs.size() / 2);
   auto bcIter = bcs.iteratorAt(ind);
 
   return compatibleBCs(bcIter, meanBC, deltaBC, bcs);
@@ -212,7 +212,7 @@ T MCcompatibleBCs(F const& collision, int const& ndt, T const& bcs, int const& n
   // return if collisions has no associated BC
   if (!collision.has_foundBC()) {
     LOGF(debug, "Collision %i - no BC found!", collision.globalIndex());
-    return T{{bcs.asArrowTable()->Slice(0, 0)}, (uint64_t)0};
+    return T{{bcs.asArrowTable()->Slice(0, 0)}, static_cast<uint64_t>(0)};
   }
 
   // get associated BC
@@ -245,19 +245,19 @@ bool hasGoodPID(DGCutparHolder diffCuts, TC track)
        track.tpcNSigmaPi(),
        track.tpcNSigmaKa(),
        track.tpcNSigmaPr());
-  if (TMath::Abs(track.tpcNSigmaEl()) < diffCuts.maxNSigmaTPC()) {
+  if (std::abs(track.tpcNSigmaEl()) < diffCuts.maxNSigmaTPC()) {
     return true;
   }
-  if (TMath::Abs(track.tpcNSigmaMu()) < diffCuts.maxNSigmaTPC()) {
+  if (std::abs(track.tpcNSigmaMu()) < diffCuts.maxNSigmaTPC()) {
     return true;
   }
-  if (TMath::Abs(track.tpcNSigmaPi()) < diffCuts.maxNSigmaTPC()) {
+  if (std::abs(track.tpcNSigmaPi()) < diffCuts.maxNSigmaTPC()) {
     return true;
   }
-  if (TMath::Abs(track.tpcNSigmaKa()) < diffCuts.maxNSigmaTPC()) {
+  if (std::abs(track.tpcNSigmaKa()) < diffCuts.maxNSigmaTPC()) {
     return true;
   }
-  if (TMath::Abs(track.tpcNSigmaPr()) < diffCuts.maxNSigmaTPC()) {
+  if (std::abs(track.tpcNSigmaPr()) < diffCuts.maxNSigmaTPC()) {
     return true;
   }
 
@@ -268,19 +268,19 @@ bool hasGoodPID(DGCutparHolder diffCuts, TC track)
          track.tofNSigmaPi(),
          track.tofNSigmaKa(),
          track.tofNSigmaPr());
-    if (TMath::Abs(track.tofNSigmaEl()) < diffCuts.maxNSigmaTOF()) {
+    if (std::abs(track.tofNSigmaEl()) < diffCuts.maxNSigmaTOF()) {
       return true;
     }
-    if (TMath::Abs(track.tofNSigmaMu()) < diffCuts.maxNSigmaTOF()) {
+    if (std::abs(track.tofNSigmaMu()) < diffCuts.maxNSigmaTOF()) {
       return true;
     }
-    if (TMath::Abs(track.tofNSigmaPi()) < diffCuts.maxNSigmaTOF()) {
+    if (std::abs(track.tofNSigmaPi()) < diffCuts.maxNSigmaTOF()) {
       return true;
     }
-    if (TMath::Abs(track.tofNSigmaKa()) < diffCuts.maxNSigmaTOF()) {
+    if (std::abs(track.tofNSigmaKa()) < diffCuts.maxNSigmaTOF()) {
       return true;
     }
-    if (TMath::Abs(track.tofNSigmaPr()) < diffCuts.maxNSigmaTOF()) {
+    if (std::abs(track.tofNSigmaPr()) < diffCuts.maxNSigmaTOF()) {
       return true;
     }
   }
@@ -673,7 +673,7 @@ void fillBGBBFlags(upchelpers::FITInfo& info, uint64_t const& minbc, BCR const& 
 // -----------------------------------------------------------------------------
 // extract FIT information
 template <typename BC, typename BCS>
-void getFITinfo(upchelpers::FITInfo& info, BC& bc, BCS const& bcs, aod::FT0s const& ft0s, aod::FV0As const& fv0as, aod::FDDs const& fdds)
+void getFITinfo(upchelpers::FITInfo& info, BC& bc, BCS const& bcs, o2::aod::FT0s const& ft0s, o2::aod::FV0As const& fv0as, o2::aod::FDDs const& fdds)
 {
   // FV0A
   if (bc.has_foundFV0()) {
@@ -712,24 +712,24 @@ void getFITinfo(upchelpers::FITInfo& info, BC& bc, BCS const& bcs, aod::FT0s con
 
 // -----------------------------------------------------------------------------
 template <typename T>
-bool cleanZDC(T const& bc, aod::Zdcs& zdcs, std::vector<float>& /*lims*/, SliceCache& cache)
+bool cleanZDC(T const& bc, o2::aod::Zdcs& zdcs, std::vector<float>& /*lims*/, o2::framework::SliceCache& cache)
 {
-  const auto& ZdcBC = zdcs.sliceByCached(aod::zdc::bcId, bc.globalIndex(), cache);
+  const auto& ZdcBC = zdcs.sliceByCached(o2::aod::zdc::bcId, bc.globalIndex(), cache);
   return (ZdcBC.size() == 0);
 }
 
 // -----------------------------------------------------------------------------
 template <typename T>
-bool cleanCalo(T const& bc, aod::Calos& calos, std::vector<float>& /*lims*/, SliceCache& cache)
+bool cleanCalo(T const& bc, o2::aod::Calos& calos, std::vector<float>& /*lims*/, o2::framework::SliceCache& cache)
 {
-  const auto& CaloBC = calos.sliceByCached(aod::calo::bcId, bc.globalIndex(), cache);
+  const auto& CaloBC = calos.sliceByCached(o2::aod::calo::bcId, bc.globalIndex(), cache);
   return (CaloBC.size() == 0);
 }
 
 // -----------------------------------------------------------------------------
 // check if all tracks come from same MCCollision
 template <typename T>
-int64_t sameMCCollision(T tracks, aod::McCollisions, aod::McParticles)
+int64_t sameMCCollision(T tracks, o2::aod::McCollisions, o2::aod::McParticles)
 {
   int64_t colID = -1;
   for (auto const& track : tracks) {
@@ -741,14 +741,14 @@ int64_t sameMCCollision(T tracks, aod::McCollisions, aod::McParticles)
           colID = mccol.globalIndex();
         } else {
           if (colID != mccol.globalIndex()) {
-            return (int64_t)-1;
+            return static_cast<int64_t>(-1);
           }
         }
       } else {
-        return (int64_t)-1;
+        return static_cast<int64_t>(-1);
       }
     } else {
-      return (int64_t)-1;
+      return static_cast<int64_t>(-1);
     }
   }
 
@@ -761,7 +761,7 @@ int64_t sameMCCollision(T tracks, aod::McCollisions, aod::McParticles)
 template <typename T>
 bool isPythiaCDE(T MCparts)
 {
-  for (auto mcpart : MCparts) {
+  for (const auto& mcpart : MCparts) {
     if (mcpart.pdgCode() == 9900110) {
       return true;
     }
@@ -780,7 +780,7 @@ bool isSTARLightJPsimumu(T MCparts)
   } else {
     if (MCparts.iteratorAt(0).pdgCode() != 443013)
       return false;
-    if (abs(MCparts.iteratorAt(1).pdgCode()) != 13)
+    if (std::abs(MCparts.iteratorAt(1).pdgCode()) != 13)
       return false;
     if (MCparts.iteratorAt(2).pdgCode() != -MCparts.iteratorAt(1).pdgCode())
       return false;
@@ -789,33 +789,46 @@ bool isSTARLightJPsimumu(T MCparts)
 }
 
 // -----------------------------------------------------------------------------
+// PbPb di electron production
+// [15, 11, 13], [15, 11, 13]
+template <typename T>
+bool isUpcgen(T MCparts)
+{
+  if (MCparts.size() < 4) {
+    return false;
+  } else {
+    auto pid1 = std::abs(MCparts.iteratorAt(0).pdgCode());
+    auto pid2 = std::abs(MCparts.iteratorAt(1).pdgCode());
+    if (pid1 != 11 && pid1 != 13 && pid1 != 15)
+      return false;
+    if (pid2 != 11 && pid2 != 13 && pid2 != 15)
+      return false;
+  }
+  return true;
+}
+
+// -----------------------------------------------------------------------------
 // In pp events produced with GRANIITTI the stack starts with
-// 22212/22212/99/22212/2212/99/90
+// 22212/22212/22212/2212/[211,321,]/[211,321,]
 template <typename T>
 bool isGraniittiCDE(T MCparts)
 {
 
-  for (auto MCpart : MCparts) {
-    LOGF(debug, " MCpart.pdgCode() %d", MCpart.pdgCode());
-  }
-  LOGF(debug, "");
+  // for (auto MCpart : MCparts) {
+  //   LOGF(info, " MCpart.pdgCode() %d", MCpart.pdgCode());
+  // }
+  // LOGF(debug, "");
 
-  if (MCparts.size() < 7) {
+  if (MCparts.size() < 6) {
     return false;
   } else {
     if (MCparts.iteratorAt(0).pdgCode() != 2212)
       return false;
     if (MCparts.iteratorAt(1).pdgCode() != 2212)
       return false;
-    if (MCparts.iteratorAt(2).pdgCode() != 99)
+    if (MCparts.iteratorAt(2).pdgCode() != 2212)
       return false;
     if (MCparts.iteratorAt(3).pdgCode() != 2212)
-      return false;
-    if (MCparts.iteratorAt(4).pdgCode() != 2212)
-      return false;
-    if (MCparts.iteratorAt(5).pdgCode() != 99)
-      return false;
-    if (MCparts.iteratorAt(6).pdgCode() != 90)
       return false;
   }
 
@@ -841,6 +854,11 @@ int isOfInterest(T MCparts)
   // STARLIGHT J/Psi -> mu+ + mu-
   if (isSTARLightJPsimumu(MCparts)) {
     return 3;
+  }
+
+  // Upcgen
+  if (isUpcgen(MCparts)) {
+    return 4;
   }
 
   return 0;

@@ -17,33 +17,20 @@
 #ifndef PWGJE_CORE_JETV0UTILITIES_H_
 #define PWGJE_CORE_JETV0UTILITIES_H_
 
-#include <array>
-#include <vector>
-#include <string>
-#include <optional>
+#include "PWGJE/DataModel/Jet.h"
+
+#include "Common/Core/RecoDecay.h"
+
+#include <Framework/ASoA.h>
 
 #include <TPDGCode.h>
 
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoA.h"
-#include "Framework/O2DatabasePDGPlugin.h"
+#include <Rtypes.h>
 
-#include "Framework/Logger.h"
-#include "Common/Core/TrackSelection.h"
-#include "Common/Core/TrackSelectionDefaults.h"
-#include "Common/DataModel/EventSelection.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "PWGJE/DataModel/EMCALClusters.h"
-
-#include "PWGHF/DataModel/CandidateReconstructionTables.h"
-#include "PWGHF/DataModel/CandidateSelectionTables.h"
-#include "PWGHF/DataModel/DerivedTables.h"
-
-#include "PWGJE/Core/FastJetUtilities.h"
-#include "PWGJE/Core/JetDerivedDataUtilities.h"
-#include "PWGJE/Core/JetFinder.h"
-#include "PWGJE/DataModel/Jet.h"
+#include <array>
+#include <cstdint>
+#include <string>
+#include <type_traits>
 
 namespace jetv0utilities
 {
@@ -90,10 +77,9 @@ constexpr bool isV0McTable()
  *
  * @param track track that is being checked
  * @param candidate V0 candidate that is being checked
- * @param tracks the track table
  */
-template <typename T, typename U, typename V>
-bool isV0DaughterTrack(T& track, U& candidate, V const& /*tracks*/)
+template <typename T, typename U>
+bool isV0DaughterTrack(T& track, U& candidate)
 {
   if constexpr (isV0Candidate<U>()) {
     if (candidate.posTrackId() == track.globalIndex() || candidate.negTrackId() == track.globalIndex()) {
@@ -151,9 +137,13 @@ auto slicedPerV0Candidate(T const& table, U const& candidate, V const& perV0Cand
 }
 
 template <typename T, typename U>
-bool isV0Particle(T const& particles, U const& particle)
+bool isV0Particle(T const& particles, U const& particle, bool v0ChargedDecaysOnly)
 {
-  return RecoDecay::isMatchedMCGen(particles, particle, +kK0Short, std::array{+kPiPlus, -kPiPlus}, true) || RecoDecay::isMatchedMCGen(particles, particle, +kLambda0, std::array{+kProton, -kPiPlus}, true) || RecoDecay::isMatchedMCGen(particles, particle, -kLambda0, std::array{-kProton, +kPiPlus}, true);
+  if (v0ChargedDecaysOnly) {
+    return RecoDecay::isMatchedMCGen(particles, particle, +kK0Short, std::array{+kPiPlus, -kPiPlus}, true) || RecoDecay::isMatchedMCGen(particles, particle, +kLambda0, std::array{+kProton, -kPiPlus}, true) || RecoDecay::isMatchedMCGen(particles, particle, -kLambda0, std::array{-kProton, +kPiPlus}, true);
+  } else {
+    return RecoDecay::isMatchedMCGen(particles, particle, +kK0Short, std::array{+kPiPlus, -kPiPlus}, true) || RecoDecay::isMatchedMCGen(particles, particle, +kK0Short, std::array{+kPi0, +kPi0}, true) || RecoDecay::isMatchedMCGen(particles, particle, +kLambda0, std::array{+kProton, -kPiPlus}, true) || RecoDecay::isMatchedMCGen(particles, particle, +kLambda0, std::array{+kNeutron, +kPi0}, true) || RecoDecay::isMatchedMCGen(particles, particle, -kLambda0, std::array{-kProton, +kPiPlus}, true) || RecoDecay::isMatchedMCGen(particles, particle, -kLambda0, std::array{+kNeutron, +kPi0}, true);
+  }
 }
 
 enum JV0ParticleDecays {
@@ -170,7 +160,7 @@ bool selectV0ParticleDecay(T const& v0Particle, int v0ParticleDecaySelection = -
   return (v0Particle.decayFlag() & (1 << v0ParticleDecaySelection));
 }
 
-int initialiseV0ParticleDecaySelection(std::string v0ParticleDecaySelection)
+int initialiseV0ParticleDecaySelection(const std::string& v0ParticleDecaySelection)
 {
   if (v0ParticleDecaySelection == "K0sToPiPi") {
     return JV0ParticleDecays::K0sToPiPi;

@@ -18,24 +18,39 @@
 /// \author Antonio Palasciano <antonio.palasciano@cern.ch>, Università degli Studi di Bari & INFN, Sezione di Bari
 /// \author Deepa Thomas <deepa.thomas@cern.ch>, UT Austin
 
-#include <vector>
-
-#include "CommonConstants/PhysicsConstants.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/HistogramRegistry.h"
-#include "Framework/O2DatabasePDGPlugin.h"
-#include "Framework/runDataProcessing.h"
-
+#include "PWGHF/Core/DecayChannels.h"
 #include "PWGHF/Core/HfHelper.h"
 #include "PWGHF/Core/SelectorCuts.h"
+#include "PWGHF/DataModel/AliasTables.h"
 #include "PWGHF/DataModel/CandidateReconstructionTables.h"
 #include "PWGHF/DataModel/CandidateSelectionTables.h"
+
+#include "Common/Core/RecoDecay.h"
+
+#include <CommonConstants/PhysicsConstants.h>
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Configurable.h>
+#include <Framework/HistogramRegistry.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/O2DatabasePDGPlugin.h>
+#include <Framework/runDataProcessing.h>
+
+#include <TString.h>
+
+#include <Rtypes.h>
+
+#include <vector>
 
 using namespace o2;
 using namespace o2::aod;
 using namespace o2::analysis;
 using namespace o2::framework;
 using namespace o2::framework::expressions;
+using namespace o2::hf_decay::hf_cand_beauty;
 
 // string definitions, used for histogram axis labels
 const TString stringPt = "#it{p}_{T} (GeV/#it{c})";
@@ -56,7 +71,6 @@ struct HfTaskBplus {
 
   // O2DatabasePDG service
   Service<o2::framework::O2DatabasePDG> pdg;
-  HfHelper hfHelper;
 
   Partition<soa::Join<aod::HfCandBplus, aod::HfSelBplusToD0Pi>> selectedBPlusCandidates = aod::hf_sel_candidate_bplus::isSelBplusToD0Pi >= selectionFlagBplus;
   Partition<soa::Join<aod::HfCandBplus, aod::HfSelBplusToD0Pi, aod::HfCandBplusMcRec>> selectedBPlusCandidatesMC = aod::hf_sel_candidate_bplus::isSelBplusToD0Pi >= selectionFlagBplus;
@@ -166,14 +180,14 @@ struct HfTaskBplus {
   {
 
     for (const auto& candidate : selectedBPlusCandidates) {
-      if (yCandRecoMax >= 0. && std::abs(hfHelper.yBplus(candidate)) > yCandRecoMax) {
+      if (yCandRecoMax >= 0. && std::abs(HfHelper::yBplus(candidate)) > yCandRecoMax) {
         continue;
       }
       auto ptCandBplus = candidate.pt();
       auto candD0 = candidate.prong0_as<soa::Join<aod::HfCand2Prong, aod::HfSelD0>>();
       auto candPi = candidate.prong1();
 
-      registry.fill(HIST("hMass"), hfHelper.invMassBplusToD0Pi(candidate), ptCandBplus);
+      registry.fill(HIST("hMass"), HfHelper::invMassBplusToD0Pi(candidate), ptCandBplus);
       registry.fill(HIST("hPtCand"), ptCandBplus);
       registry.fill(HIST("hPtProng0"), candidate.ptProng0());
       registry.fill(HIST("hPtProng1"), candidate.ptProng1());
@@ -185,20 +199,20 @@ struct HfTaskBplus {
       registry.fill(HIST("hCPA"), candidate.cpa(), ptCandBplus);
       registry.fill(HIST("hCPAxy"), candidate.cpaXY(), ptCandBplus);
       registry.fill(HIST("hEta"), candidate.eta(), ptCandBplus);
-      registry.fill(HIST("hRapidity"), hfHelper.yBplus(candidate), ptCandBplus);
+      registry.fill(HIST("hRapidity"), HfHelper::yBplus(candidate), ptCandBplus);
       registry.fill(HIST("hImpParErr"), candidate.errorImpactParameter0(), ptCandBplus);
       registry.fill(HIST("hImpParErr"), candidate.errorImpactParameter1(), ptCandBplus);
       registry.fill(HIST("hDecLenErr"), candidate.errorDecayLength(), ptCandBplus);
       registry.fill(HIST("hDecLenXYErr"), candidate.errorDecayLengthXY(), ptCandBplus);
       if (candPi.sign() > 0) {
-        registry.fill(HIST("hInvMassD0"), hfHelper.invMassD0barToKPi(candD0), ptCandBplus);
+        registry.fill(HIST("hInvMassD0"), HfHelper::invMassD0barToKPi(candD0), ptCandBplus);
       } else {
-        registry.fill(HIST("hInvMassD0"), hfHelper.invMassD0ToPiK(candD0), ptCandBplus);
+        registry.fill(HIST("hInvMassD0"), HfHelper::invMassD0ToPiK(candD0), ptCandBplus);
       }
       registry.fill(HIST("hCPAFinerBinning"), candidate.cpa(), ptCandBplus);
       registry.fill(HIST("hCPAxyFinerBinning"), candidate.cpaXY(), ptCandBplus);
     } // candidate loop
-  }   // process
+  } // process
 
   void processMc(soa::Join<aod::HfCandBplus, aod::HfSelBplusToD0Pi, aod::HfCandBplusMcRec> const&,
                  soa::Join<aod::McParticles, aod::HfCandBplusMcGen> const& mcParticles,
@@ -207,12 +221,12 @@ struct HfTaskBplus {
   {
     // MC rec
     for (const auto& candidate : selectedBPlusCandidatesMC) {
-      if (yCandRecoMax >= 0. && std::abs(hfHelper.yBplus(candidate)) > yCandRecoMax) {
+      if (yCandRecoMax >= 0. && std::abs(HfHelper::yBplus(candidate)) > yCandRecoMax) {
         continue;
       }
       auto ptCandBplus = candidate.pt();
       // auto candD0 = candidate.prong0_as<aod::HfCand2Prong>();
-      if (TESTBIT(std::abs(candidate.flagMcMatchRec()), hf_cand_bplus::DecayType::BplusToD0Pi)) {
+      if (std::abs(candidate.flagMcMatchRec()) == DecayChannelMain::BplusToD0Pi) {
 
         auto indexMother = RecoDecay::getMother(mcParticles, candidate.prong1_as<aod::TracksWMc>().mcParticle_as<soa::Join<aod::McParticles, aod::HfCandBplusMcGen>>(), o2::constants::physics::Pdg::kBPlus, true);
         auto particleMother = mcParticles.rawIteratorAt(indexMother);
@@ -223,10 +237,10 @@ struct HfTaskBplus {
         registry.fill(HIST("hCPAFinerBinningRecSig"), candidate.cpa(), ptCandBplus);
         registry.fill(HIST("hCPAxyFinerBinningRecSig"), candidate.cpaXY(), ptCandBplus);
         registry.fill(HIST("hEtaRecSig"), candidate.eta(), ptCandBplus);
-        registry.fill(HIST("hRapidityRecSig"), hfHelper.yBplus(candidate), ptCandBplus);
+        registry.fill(HIST("hRapidityRecSig"), HfHelper::yBplus(candidate), ptCandBplus);
         registry.fill(HIST("hDecLengthRecSig"), candidate.decayLength(), ptCandBplus);
         registry.fill(HIST("hDecLengthXYRecSig"), candidate.decayLengthXY(), ptCandBplus);
-        registry.fill(HIST("hMassRecSig"), hfHelper.invMassBplusToD0Pi(candidate), ptCandBplus);
+        registry.fill(HIST("hMassRecSig"), HfHelper::invMassBplusToD0Pi(candidate), ptCandBplus);
         registry.fill(HIST("hd0Prong0RecSig"), candidate.impactParameter0(), ptCandBplus);
         registry.fill(HIST("hd0Prong1RecSig"), candidate.impactParameter1(), ptCandBplus);
         registry.fill(HIST("hPtProng0RecSig"), candidate.ptProng0(), ptCandBplus);
@@ -240,10 +254,10 @@ struct HfTaskBplus {
         registry.fill(HIST("hCPAFinerBinningRecBg"), candidate.cpa(), ptCandBplus);
         registry.fill(HIST("hCPAxyFinerBinningRecBg"), candidate.cpaXY(), ptCandBplus);
         registry.fill(HIST("hEtaRecBg"), candidate.eta(), ptCandBplus);
-        registry.fill(HIST("hRapidityRecBg"), hfHelper.yBplus(candidate), ptCandBplus);
+        registry.fill(HIST("hRapidityRecBg"), HfHelper::yBplus(candidate), ptCandBplus);
         registry.fill(HIST("hDecLengthRecBg"), candidate.decayLength(), ptCandBplus);
         registry.fill(HIST("hDecLengthXYRecBg"), candidate.decayLengthXY(), ptCandBplus);
-        registry.fill(HIST("hMassRecBg"), hfHelper.invMassBplusToD0Pi(candidate), ptCandBplus);
+        registry.fill(HIST("hMassRecBg"), HfHelper::invMassBplusToD0Pi(candidate), ptCandBplus);
         registry.fill(HIST("hd0Prong0RecBg"), candidate.impactParameter0(), ptCandBplus);
         registry.fill(HIST("hd0Prong1RecBg"), candidate.impactParameter1(), ptCandBplus);
         registry.fill(HIST("hPtProng0RecBg"), candidate.ptProng0(), ptCandBplus);
@@ -255,7 +269,7 @@ struct HfTaskBplus {
 
     // MC gen. level
     for (const auto& particle : mcParticles) {
-      if (TESTBIT(std::abs(particle.flagMcMatchGen()), hf_cand_bplus::DecayType::BplusToD0Pi)) {
+      if (std::abs(particle.flagMcMatchGen()) == DecayChannelMain::BplusToD0Pi) {
 
         auto ptParticle = particle.pt();
         auto yParticle = RecoDecay::y(particle.pVector(), o2::constants::physics::MassBPlus);
@@ -299,7 +313,7 @@ struct HfTaskBplus {
         registry.fill(HIST("hEtaGenWithProngsInAcceptance"), particle.eta(), ptParticle);
       }
     } // gen
-  }   // processMc
+  } // processMc
 
   PROCESS_SWITCH(HfTaskBplus, processMc, "Process MC", false);
 };

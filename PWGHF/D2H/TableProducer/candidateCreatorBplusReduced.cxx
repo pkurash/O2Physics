@@ -14,22 +14,33 @@
 ///
 /// \author Antonio Palasciano <antonio.palasciano@cern.ch>, Università degli Studi di Bari
 
-#include <memory>
-
-#include "CommonConstants/PhysicsConstants.h"
-#include "DCAFitter/DCAFitterN.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/runDataProcessing.h"
-#include "ReconstructionDataFormats/DCA.h"
-#include "ReconstructionDataFormats/V0.h"
-
-#include "Common/Core/trackUtilities.h"
-#include "Common/DataModel/CollisionAssociationTables.h"
-
-#include "PWGHF/DataModel/CandidateReconstructionTables.h"
-#include "PWGHF/DataModel/CandidateSelectionTables.h"
 #include "PWGHF/D2H/DataModel/ReducedDataModel.h"
+#include "PWGHF/DataModel/CandidateReconstructionTables.h"
 #include "PWGHF/Utils/utilsTrkCandHf.h"
+
+#include "Common/Core/RecoDecay.h"
+#include "Common/Core/trackUtilities.h"
+
+#include <CommonConstants/PhysicsConstants.h>
+#include <DCAFitter/DCAFitterN.h>
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Configurable.h>
+#include <Framework/HistogramRegistry.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/Logger.h>
+#include <Framework/runDataProcessing.h>
+#include <ReconstructionDataFormats/DCA.h>
+
+#include <TH1.h>
+
+#include <array>
+#include <cmath>
+#include <memory>
+#include <numeric>
+#include <stdexcept>
 
 using namespace o2;
 using namespace o2::aod;
@@ -109,7 +120,7 @@ struct HfCandidateCreatorBplusReduced {
   /// \param tracksPionThisCollision pion tracks in this collision
   /// \param invMass2D0PiMin minimum B+ invariant-mass
   /// \param invMass2D0PiMax maximum B+ invariant-mass
-  template <bool withDmesMl, typename Cands, typename Pions, typename Coll>
+  template <bool WithDmesMl, typename Cands, typename Pions, typename Coll>
   void runCandidateCreation(Coll const& collision,
                             Cands const& candsDThisColl,
                             Pions const& tracksPionThisCollision,
@@ -158,8 +169,7 @@ struct HfCandidateCreatorBplusReduced {
         registry.fill(HIST("hCovSVXX"), covMatrixPCA[0]);
         registry.fill(HIST("hCovPVXX"), covMatrixPV[0]);
 
-        // propagate D0 and Pi to the B+ vertex
-        df2.propagateTracksToVertex();
+        // get D and Pi tracks (propagated to the B+ vertex if propagateToPCA==true)
         // track.getPxPyPzGlo(pVec) modifies pVec of track
         df2.getTrack(0).getPxPyPzGlo(pVecD0);   // momentum of D0 at the B+ vertex
         df2.getTrack(1).getPxPyPzGlo(pVecPion); // momentum of Pi at the B+ vertex
@@ -192,7 +202,7 @@ struct HfCandidateCreatorBplusReduced {
 
         rowCandidateProngs(candD0.globalIndex(), trackPion.globalIndex());
 
-        if constexpr (withDmesMl) {
+        if constexpr (WithDmesMl) {
           if (trackPion.signed1Pt() < 0) {
             rowCandidateDmesMlScores(candD0.mlScoreBkgMassHypo0(), candD0.mlScorePromptMassHypo0(), candD0.mlScoreNonpromptMassHypo0());
           } else {
@@ -200,8 +210,8 @@ struct HfCandidateCreatorBplusReduced {
           }
         }
       } // pi loop
-    }   // D0 loop
-  }     // end runCandidateCreation
+    } // D0 loop
+  } // end runCandidateCreation
 
   void processData(HfRedCollisionsWithExtras const& collisions,
                    soa::Join<aod::HfRed2Prongs, aod::HfRed2ProngsCov> const& candsD,
@@ -215,8 +225,8 @@ struct HfCandidateCreatorBplusReduced {
     }
     // invMassWindowD0PiTolerance is used to apply a slightly tighter cut than in D0Pi pair preselection
     // to avoid accepting D0Pi pairs that were not formed in D0Pi pair creator
-    double invMass2D0PiMin = (massBplus - myInvMassWindowD0Pi + invMassWindowD0PiTolerance) * (massBplus - myInvMassWindowD0Pi + invMassWindowD0PiTolerance);
-    double invMass2D0PiMax = (massBplus + myInvMassWindowD0Pi - invMassWindowD0PiTolerance) * (massBplus + myInvMassWindowD0Pi - invMassWindowD0PiTolerance);
+    double const invMass2D0PiMin = (massBplus - myInvMassWindowD0Pi + invMassWindowD0PiTolerance) * (massBplus - myInvMassWindowD0Pi + invMassWindowD0PiTolerance);
+    double const invMass2D0PiMax = (massBplus + myInvMassWindowD0Pi - invMassWindowD0PiTolerance) * (massBplus + myInvMassWindowD0Pi - invMassWindowD0PiTolerance);
 
     for (const auto& collisionCounter : collisionsCounter) {
       registry.fill(HIST("hEvents"), 1, collisionCounter.originalCollisionCount());
@@ -250,8 +260,8 @@ struct HfCandidateCreatorBplusReduced {
     }
     // invMassWindowD0PiTolerance is used to apply a slightly tighter cut than in D0Pi pair preselection
     // to avoid accepting D0Pi pairs that were not formed in D0Pi pair creator
-    float invMass2D0PiMin = (massBplus - myInvMassWindowD0Pi + invMassWindowD0PiTolerance) * (massBplus - myInvMassWindowD0Pi + invMassWindowD0PiTolerance);
-    float invMass2D0PiMax = (massBplus + myInvMassWindowD0Pi - invMassWindowD0PiTolerance) * (massBplus + myInvMassWindowD0Pi - invMassWindowD0PiTolerance);
+    float const invMass2D0PiMin = (massBplus - myInvMassWindowD0Pi + invMassWindowD0PiTolerance) * (massBplus - myInvMassWindowD0Pi + invMassWindowD0PiTolerance);
+    float const invMass2D0PiMax = (massBplus + myInvMassWindowD0Pi - invMassWindowD0PiTolerance) * (massBplus + myInvMassWindowD0Pi - invMassWindowD0PiTolerance);
 
     for (const auto& collisionCounter : collisionsCounter) {
       registry.fill(HIST("hEvents"), 1, collisionCounter.originalCollisionCount());
@@ -284,7 +294,7 @@ struct HfCandidateCreatorBplusReducedExpressions {
   /// \param checkDecayTypeMc
   /// \param rowsD0PiMcRec MC reco information on D0Pi pairs
   /// \param candsBplus prong global indices of B+ candidates
-  template <bool checkDecayTypeMc, typename McRec>
+  template <bool CheckDecayTypeMc, typename McRec>
   void fillBplusMcRec(McRec const& rowsD0PiMcRec, HfRedBplusProngs const& candsBplus)
   {
     for (const auto& candBplus : candsBplus) {
@@ -293,10 +303,11 @@ struct HfCandidateCreatorBplusReducedExpressions {
         if ((rowD0PiMcRec.prong0Id() != candBplus.prong0Id()) || (rowD0PiMcRec.prong1Id() != candBplus.prong1Id())) {
           continue;
         }
-        rowBplusMcRec(rowD0PiMcRec.flagMcMatchRec(), rowD0PiMcRec.flagWrongCollision(), rowD0PiMcRec.debugMcRec(), rowD0PiMcRec.ptMother());
+        rowBplusMcRec(rowD0PiMcRec.flagMcMatchRec(), -1 /*channel*/, rowD0PiMcRec.flagWrongCollision(), rowD0PiMcRec.debugMcRec(), rowD0PiMcRec.ptMother());
         filledMcInfo = true;
-        if constexpr (checkDecayTypeMc) {
+        if constexpr (CheckDecayTypeMc) {
           rowBplusMcCheck(rowD0PiMcRec.pdgCodeBeautyMother(),
+                          rowD0PiMcRec.pdgCodeCharmMother(),
                           rowD0PiMcRec.pdgCodeProng0(),
                           rowD0PiMcRec.pdgCodeProng1(),
                           rowD0PiMcRec.pdgCodeProng2());
@@ -304,9 +315,9 @@ struct HfCandidateCreatorBplusReducedExpressions {
         break;
       }
       if (!filledMcInfo) { // protection to get same size tables in case something went wrong: we created a candidate that was not preselected in the D0-Pi creator
-        rowBplusMcRec(0, -1, -1, -1.f);
-        if constexpr (checkDecayTypeMc) {
-          rowBplusMcCheck(-1, -1, -1, -1);
+        rowBplusMcRec(0, -1, -1, -1, -1.f);
+        if constexpr (CheckDecayTypeMc) {
+          rowBplusMcCheck(-1, -1, -1, -1, -1);
         }
       }
     }

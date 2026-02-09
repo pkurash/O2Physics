@@ -1,4 +1,4 @@
-// Copyright 2019-2023 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2025 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -15,13 +15,14 @@
 ///
 /// \author Fabio Catalano <fabio.catalano@cern.ch>, CERN
 
+#include "PWGHF/Core/HfHelper.h"
+#include "PWGHF/DataModel/CandidateReconstructionTables.h"
+
+#include "Tools/ML/MlResponse.h"
+
 #include "Framework/AnalysisTask.h"
 #include "Framework/HistogramRegistry.h"
 #include "Framework/runDataProcessing.h"
-
-#include "Tools/ML/MlResponse.h"
-#include "PWGHF/Core/HfHelper.h"
-#include "PWGHF/DataModel/CandidateReconstructionTables.h"
 
 using namespace o2;
 using namespace o2::analysis;
@@ -113,26 +114,12 @@ struct applyMlSelection {
       // Retrieve model output and selection outcome
 
       // Fill BDT score histograms before selection
-      registry.fill(HIST("hPromptScoreBeforeSel"), outputMl[0]);
 
       // Fill histograms for selected candidates
-      bool isSelectedMlPiKK = true;
-      if (isSelectedMlPiKK) {
-        registry.fill(HIST("hMassAfterSelVsPt"), hfHelper.invMassDsToPiKK(candidate), candidate.pt());
-        registry.fill(HIST("hPromptScoreAfterSelVsPt"), outputMl[0], candidate.pt());
-      }
 
       outputMl.clear(); // not necessary in this case but for good measure
 
       // Perform ML selections for other mass hypothesis (Ds -> PhiPi -> KKPi)
-      std::vector<float> inputFeaturesKKPi{candidate.cpa(),
-                                           candidate.cpaXY(),
-                                           candidate.decayLength(),
-                                           candidate.decayLengthXY(),
-                                           static_cast<float>(hfHelper.deltaMassPhiDsToKKPi(candidate)),
-                                           candidate.impactParameterXY(),
-                                           static_cast<float>(hfHelper.cos3PiKDsToKKPi(candidate)),
-                                           candidate.maxNormalisedDeltaIP()};
 
       // Retrieve model output and selection outcome
 

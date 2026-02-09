@@ -11,7 +11,7 @@
 
 o2physics_add_dpl_workflow(nuclei-batask
     SOURCES LFNucleiBATask.cxx
-    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2Physics::AnalysisCCDB O2Physics::EventFilteringUtils
     COMPONENT_NAME Analysis)
 
 o2physics_add_dpl_workflow(hypertritonanalysis
@@ -21,21 +21,6 @@ o2physics_add_dpl_workflow(hypertritonanalysis
 
 o2physics_add_dpl_workflow(nuclei-hist
     SOURCES NucleiHistTask.cxx
-    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
-    COMPONENT_NAME Analysis)
-
-o2physics_add_dpl_workflow(hypertriton3bodyanalysis
-    SOURCES hypertriton3bodyanalysis.cxx
-    PUBLIC_LINK_LIBRARIES O2::DCAFitter O2Physics::AnalysisCore
-    COMPONENT_NAME Analysis)
-
-o2physics_add_dpl_workflow(hypertriton3bodymcqa
-    SOURCES hypertriton3bodyMCQA.cxx
-    PUBLIC_LINK_LIBRARIES O2::DCAFitter O2Physics::AnalysisCore O2::TOFBase
-    COMPONENT_NAME Analysis)
-
-o2physics_add_dpl_workflow(nuclei-in-jets
-    SOURCES nucleiInJets.cxx
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
     COMPONENT_NAME Analysis)
 
@@ -51,11 +36,6 @@ o2physics_add_dpl_workflow(antimatter-abs-hmpid
 
 o2physics_add_dpl_workflow(hyhefour-analysis
     SOURCES hyhe4analysis.cxx
-    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
-    COMPONENT_NAME Analysis)
-
-o2physics_add_dpl_workflow(antid-lambda-ebye
-    SOURCES antidLambdaEbye.cxx
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
     COMPONENT_NAME Analysis)
 
@@ -89,13 +69,23 @@ o2physics_add_dpl_workflow(spectra-tpc-tiny
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
     COMPONENT_NAME Analysis)
 
+o2physics_add_dpl_workflow(nuclei-tpcspectra
+    SOURCES nucleitpcpbpb.cxx
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+    COMPONENT_NAME Analysis)
+
 o2physics_add_dpl_workflow(spectra-tpc-tiny-pikapr
     SOURCES spectraTPCtinyPiKaPr.cxx
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
     COMPONENT_NAME Analysis)
 
-o2physics_add_dpl_workflow(spectra-charged
-    SOURCES spectraCharged.cxx
+o2physics_add_dpl_workflow(charged-particles
+    SOURCES chargedParticles.cxx
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(pcc-qa
+    SOURCES pccQa.cxx
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
     COMPONENT_NAME Analysis)
 
@@ -119,6 +109,11 @@ o2physics_add_dpl_workflow(deut-rt-task
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
     COMPONENT_NAME Analysis)
 
+o2physics_add_dpl_workflow(neutron-skin
+    SOURCES neutronSkin.cxx
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+    COMPONENT_NAME Analysis)
+
 o2physics_add_dpl_workflow(hadronnucleicorrelation
     SOURCES hadronnucleicorrelation.cxx
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
@@ -134,13 +129,13 @@ o2physics_add_dpl_workflow(nuclei-ebye
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
     COMPONENT_NAME Analysis)
 
-o2physics_add_dpl_workflow(nuclei-toward-transv
-    SOURCES nuclei_in_toward_transv_regions.cxx
+o2physics_add_dpl_workflow(anti-nuclei-hist
+    SOURCES AntiNucleiTask.cxx
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
     COMPONENT_NAME Analysis)
 
-o2physics_add_dpl_workflow(ebye-mult
-    SOURCES ebyeMult.cxx
+o2physics_add_dpl_workflow(nuclei-toward-transv
+    SOURCES nuclei_in_toward_transv_regions.cxx
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
     COMPONENT_NAME Analysis)
 
@@ -151,7 +146,48 @@ o2physics_add_dpl_workflow(nuclei-from-hypertriton-map
 
 if(FastJet_FOUND)
 o2physics_add_dpl_workflow(angular-correlations-in-jets
-    SOURCES AngularCorrelationsInJets.cxx
+    SOURCES angularCorrelationsInJets.cxx
     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2Physics::PWGJECore FastJet::FastJet FastJet::Contrib
     COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(antinuclei-in-jets
+    SOURCES antinucleiInJets.cxx
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2Physics::PWGJECore FastJet::FastJet FastJet::Contrib O2Physics::EventFilteringUtils
+    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(kink-pika
+    SOURCES spectraKinkPiKa.cxx
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(he3-lambda-derived-analysis
+    SOURCES he3LambdaDerivedAnalysis.cxx
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(dedx-pid-analysis
+                    SOURCES dedxPidAnalysis.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(pikp-raa-analysis
+    SOURCES piKpRAA.cxx
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(chargedparticle-raa
+    SOURCES chargedparticleRaa.cxx
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(multiplicity-pt
+                    SOURCES MultiplicityPt.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(deuteron-in-jets-trg-pt
+    SOURCES DeuteronInJetsTrgPt.cxx
+    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2Physics::PWGJECore FastJet::FastJet FastJet::Contrib O2Physics::EventFilteringUtils
+    COMPONENT_NAME Analysis)
+
 endif()

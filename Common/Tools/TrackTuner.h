@@ -18,32 +18,31 @@
 #ifndef COMMON_TOOLS_TRACKTUNER_H_
 #define COMMON_TOOLS_TRACKTUNER_H_
 
+#include <CCDB/BasicCCDBManager.h>
+#include <CCDB/CcdbApi.h>
+#include <CommonConstants/MathConstants.h>
+#include <DataFormatsParameters/GRPMagField.h> // FIXME: remove
+#include <DetectorsBase/Propagator.h>
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/Configurable.h>
+#include <Framework/runDataProcessing.h>
+#include <ReconstructionDataFormats/Vertex.h>
+
+#include <TDirectory.h>
+#include <TFile.h>
+#include <TGraphErrors.h>
+#include <TObject.h>
+
+#include <fmt/core.h>
+#include <fmt/format.h>
+
+#include <algorithm>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
-#include <algorithm>
-
-#include "CCDB/BasicCCDBManager.h"
-#include "CCDB/CcdbApi.h"
-#include "CommonConstants/GeomConstants.h"
-#include "Common/Core/trackUtilities.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "CommonUtils/NameConf.h"
-#include "DataFormatsCalibration/MeanVertexObject.h"
-#include "DataFormatsParameters/GRPMagField.h"
-#include "DetectorsBase/Propagator.h"
-#include "DetectorsBase/GeometryManager.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/Configurable.h"
-#include "Framework/HistogramRegistry.h"
-#include "Framework/runDataProcessing.h"
-#include "Framework/RunningWorkflowInfo.h"
-#include "ReconstructionDataFormats/DCA.h"
-#include "ReconstructionDataFormats/Track.h"
-#include <TGraphErrors.h>
 
 namespace o2::aod
 {
@@ -77,7 +76,8 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
   o2::framework::Configurable<bool> cfgUsePvRefitCorrections{"usePvRefitCorrections", false, "Flag to establish whether to use corrections obtained with or w/o PV refit"};
   o2::framework::Configurable<float> cfgQOverPtMC{"qOverPtMC", -1., "Scaling factor on q/pt of MC"};
   o2::framework::Configurable<float> cfgQOverPtData{"qOverPtData", -1., "Scaling factor on q/pt of data"};
-
+  o2::framework::Configurable<int> cfgNPhiBins{"nPhiBins", 0, "Number of phi bins"};
+  o2::framework::Configurable<bool> cfgAutoDetectDcaCalib{"autoDetectDcaCalib", false, "Flag to enable the dca-calibration file autodetect from CCDB (list of predefined cases)"};
   ///////////////////////////////
   /// parameters to be configured
   bool debugInfo = false;
@@ -94,33 +94,43 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
   bool usePvRefitCorrections = false; // establish whether to use corrections obtained with or w/o PV refit
   float qOverPtMC = -1.;              // 1/pt MC
   float qOverPtData = -1.;            // 1/pt data
+  bool autoDetectDcaCalib = false;    // enable automatic pick-up of dca calibration files from CCDB (list of predefined cases)
   ///////////////////////////////
   bool isConfigFromString = false;
   bool isConfigFromConfigurables = false;
+  int nPhiBins = 1;
+  int runNumber = 0; // first run number considered in analysis (useful only if autoDetectDcaCalib = true)
+  bool areGraphsConfigured = false;
+  std::string outputString = "";
 
-  o2::ccdb::CcdbApi ccdbApi;
   std::map<std::string, std::string> metadata;
 
-  std::unique_ptr<TGraphErrors> grDcaXYResVsPtPionMC;
-  std::unique_ptr<TGraphErrors> grDcaXYResVsPtPionData;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaXYResVsPtPionMC;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaXYResVsPtPionData;
 
-  std::unique_ptr<TGraphErrors> grDcaZResVsPtPionMC;
-  std::unique_ptr<TGraphErrors> grDcaZResVsPtPionData;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaZResVsPtPionMC;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaZResVsPtPionData;
 
-  std::unique_ptr<TGraphErrors> grDcaXYMeanVsPtPionMC;
-  std::unique_ptr<TGraphErrors> grDcaXYMeanVsPtPionData;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaXYMeanVsPtPionMC;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaXYMeanVsPtPionData;
 
-  std::unique_ptr<TGraphErrors> grDcaZMeanVsPtPionMC;
-  std::unique_ptr<TGraphErrors> grDcaZMeanVsPtPionData;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaZMeanVsPtPionMC;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaZMeanVsPtPionData;
 
   std::unique_ptr<TGraphErrors> grOneOverPtPionMC;   // MC
   std::unique_ptr<TGraphErrors> grOneOverPtPionData; // Data
 
-  std::unique_ptr<TGraphErrors> grDcaXYPullVsPtPionMC;
-  std::unique_ptr<TGraphErrors> grDcaXYPullVsPtPionData;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaXYPullVsPtPionMC;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaXYPullVsPtPionData;
 
-  std::unique_ptr<TGraphErrors> grDcaZPullVsPtPionMC;
-  std::unique_ptr<TGraphErrors> grDcaZPullVsPtPionData;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaZPullVsPtPionMC;
+  std::vector<std::unique_ptr<TGraphErrors>> grDcaZPullVsPtPionData;
+
+  /// @brief Function to initialize the run number to that of the 1st considered bunch crossing (useful only if autoDetectDcaCalib = true)
+  void setRunNumber(int n)
+  {
+    runNumber = n;
+  }
 
   /// @brief Function doing a few sanity-checks on the configurations
   void checkConfig()
@@ -133,6 +143,102 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     if ((updateCurvatureIU) && (updateCurvature)) {
       LOG(fatal) << " [ updateCurvatureIU==kTRUE and updateCurvature==kTRUE ] -> Only one of them can be set to kTRUE at once! Please refer to the trackTuner documentation.";
     }
+  }
+
+  void getPathInputFileAutomaticFromCCDB()
+  {
+
+    /// check: no CCDB autodetection if the desired input file is not in CCDB
+    if (!isInputFileFromCCDB) {
+      LOG(fatal) << "[TrackTuner::getPathInputFileAutomaticFromCCDB] Trying to auto detect the dca calibration file from CCDB, but you ask the input file to not come from CCDB (isInputFileFromCCDB==" << isInputFileFromCCDB << "). Fix it!";
+    }
+    /// check that the run number has been already properly set
+    if (runNumber == 0) {
+      LOG(fatal) << "[TrackTuner::getPathInputFileAutomaticFromCCDB] runNumber==" << runNumber << ", automatic detection of dca calibration file from CCDB not possible. Did you call the function TrackTuner::setrunNumber()?";
+    }
+    /// check than the number of phi bins for the track tuner calibrations is 24
+    if (nPhiBins != 24) {
+      LOG(fatal) << "[TrackTuner::getPathInputFileAutomaticFromCCDB] nPhiBins==" << nPhiBins << ", but the automatic detection of dca calibration file from CCDB is supported only for nPhiBins==24. Either put nPhiBins=24, or disable the auto-detection (autoDetectDcaCalib=false)";
+    }
+
+    pathInputFile = "invalid";
+
+    ///////////////////////////////////////////////////////////////////////////
+    ///                                                                     ///
+    ///   establish some pre-defined cases based only on the run numbers    ///
+    ///                                                                     ///
+    ///////////////////////////////////////////////////////////////////////////
+    LOG(info) << "";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++   TrackTuner configuration                                                                                                          +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++   Autodetect mode activated for the DCA calibration files                                                                           +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++   The DCA calibration files are picked-up from CCDB based on the analysed run number                                                +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++   NB: only the number of the first analysed run is considered to configure the TrackTuner object                                    +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++                                                                                                                                     +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++   Supported cases:                                                                                                                  +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++      [CASE 1]: pp, 13.6 TeV 2022, 2023: CCDB path Users/m/mfaggin/test/inputsTrackTuner/pp2023/pass4/vsPhi                          +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++                Run list: (520259 (LHC22f) <= runNumber <= 529691 (LHC22t)) || (534998 (LHC23zc) <= runNumber <= 543113 (LHC23zw))   +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++                                                                                                                                     +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++      [CASE 2]: Pb-Pb, 5.34 TeV 2022, 2023, 2024: CCDB path Users/m/mfaggin/test/inputsTrackTuner/PbPb2023/apass4/vsPhi              +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++                Run list: (529397 <= runNumber <= 529418 (LHC22o)) || (543437 (LHC23zx) <= runNumber <= 545367 (LHC23zzo))           +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++                                                                                                                                     +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++      [CASE 3]: pp, 13.6 TeV 2024: CCDB path Users/m/mfaggin/test/inputsTrackTuner/pp2024/pass1_minBias/vsPhi                        +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++                Run list: 549559 (LHC24ac) <= runNumber && runNumber <= 558807 (LHC24ao)                                             +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++      [CASE 4]: OO, 5.36 TeV 2025, period LHC25ae: CCDB path Users/m/mfaggin/test/inputsTrackTuner/OO/LHC25ae                        +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++                Run list: 564356 <= runNumber && runNumber <= 564445                                                                 +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++      [CASE 5]: OO, 5.36 TeV 2025, period LHC25af: CCDB path Users/m/mfaggin/test/inputsTrackTuner/OO/LHC25af                        +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++                Run list: 564468 <= runNumber && runNumber <= 564472                                                                 +++";
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++";
+    LOG(info) << "";
+
+    LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]: current run number = " << runNumber;
+
+    if ((520259 <= runNumber && runNumber <= 529691) || (534998 <= runNumber && runNumber <= 543113)) {
+      ///
+      ///   [CASE 1]: pp, 13.6 TeV 2022, 2023: CCDB path Users/m/mfaggin/test/inputsTrackTuner/pp2023/pass4/vsPhi
+      ///             Run list: (520259 (LHC22f) <= runNumber <= 529691 (LHC22t)) || (534998 (LHC23zc) <= runNumber <= 543113 (LHC23zw))
+      ///
+      pathInputFile = "Users/m/mfaggin/test/inputsTrackTuner/pp2023/pass4/vsPhi";
+      LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]:   >>>   pp, 13.6 TeV 2022, 2023: CCDB path " << pathInputFile;
+      LOG(info) << "                                                   >>>   Run list: (520259 (LHC22f) <= runNumber <= 529691 (LHC22t)) || (534998 (LHC23zc) <= runNumber <= 543113 (LHC23zw))";
+    } else if ((529397 <= runNumber && runNumber <= 529418) || (543437 <= runNumber && runNumber <= 545367)) {
+      ///
+      ///   [CASE 2]: Pb-Pb, 5.34 TeV 2022, 2023, 2024: CCDB path Users/m/mfaggin/test/inputsTrackTuner/PbPb2023/apass4/vsPhi
+      ///             Run list: (529397 <= runNumber <= 529418 (LHC22o)) || (543437 (LHC23zx) <= runNumber <= 545367 (LHC23zzo))
+      ///
+      pathInputFile = "Users/m/mfaggin/test/inputsTrackTuner/PbPb2023/apass4/vsPhi";
+      LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]:   >>>   Pb-Pb, 5.34 TeV 2022, 2023, 2024: CCDB path " << pathInputFile;
+      LOG(info) << "                                                   >>>   Run list: (529397 <= runNumber <= 529418 (LHC22o)) || (543437 (LHC23zx) <= runNumber <= 545367 (LHC23zzo))";
+    } else if (549559 <= runNumber && runNumber <= 558807) {
+      ///
+      ///   [CASE 3]: pp, 13.6 TeV 2024: CCDB path Users/m/mfaggin/test/inputsTrackTuner/pp2024/pass1_minBias/vsPhi
+      ///             Run list: 549559 (LHC24ac) <= runNumber && runNumber <= 558807 (LHC24ao)
+      ///
+      pathInputFile = "Users/m/mfaggin/test/inputsTrackTuner/pp2024/pass1_minBias/vsPhi";
+      LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]:   >>>   pp, 13.6 TeV 2024: CCDB path " << pathInputFile;
+      LOG(info) << "                                                   >>>   Run list: 549559 (LHC24ac) <= runNumber && runNumber <= 558807 (LHC24ao)";
+    } else if (564356 <= runNumber && runNumber <= 564445) {
+      ///
+      ///   [CASE 4]: OO, 5.36 TeV 2025, period LHC25ae: CCDB path Users/m/mfaggin/test/inputsTrackTuner/OO/LHC25ae
+      ///             Run list: 564356 <= runNumber && runNumber <= 564445
+      ///
+      pathInputFile = "Users/m/mfaggin/test/inputsTrackTuner/OO/LHC25ae";
+      LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]:   >>>   OO, 5.36 TeV 2025, period LHC25ae: CCDB path " << pathInputFile;
+      LOG(info) << "                                                   >>>   Run list: 564356 <= runNumber && runNumber <= 564445";
+    } else if (564468 <= runNumber && runNumber <= 564472) {
+      ///
+      ///   [CASE 5]: OO, 5.36 TeV 2025, period LHC25af: CCDB path Users/m/mfaggin/test/inputsTrackTuner/OO/LHC25af
+      ///             Run list: 564468 <= runNumber && runNumber <= 564472
+      ///
+      pathInputFile = "Users/m/mfaggin/test/inputsTrackTuner/OO/LHC25af";
+      LOG(info) << "[TrackTuner::getPathInputFileAutomaticFromCCDB]:   >>>   OO, 5.36 TeV 2025, period LHC25af: CCDB path " << pathInputFile;
+      LOG(info) << "                                                   >>>   Run list: 564468 <= runNumber && runNumber <= 564472";
+    } else {
+      LOG(fatal) << "runNumber " << runNumber << " not supported for the autodetection. Please switch to manual configuration of the TrackTuner object. Aborting...";
+    }
+
+    outputString += ", pathInputFile=" + pathInputFile;
   }
 
   /// @brief Function to configure the TrackTuner parameters with an input string
@@ -191,6 +297,8 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
                           UsePvRefitCorrections,
                           QOverPtMC,
                           QOverPtData,
+                          NPhiBins,
+                          AutoDetectDcaCalib,
                           NPars };
     std::map<uint8_t, std::string> mapParNames = {
       std::make_pair(DebugInfo, "debugInfo"),
@@ -206,7 +314,9 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
       std::make_pair(NameFileQoverPt, "nameFileQoverPt"),
       std::make_pair(UsePvRefitCorrections, "usePvRefitCorrections"),
       std::make_pair(QOverPtMC, "qOverPtMC"),
-      std::make_pair(QOverPtData, "qOverPtData")};
+      std::make_pair(QOverPtData, "qOverPtData"),
+      std::make_pair(NPhiBins, "nPhiBins"),
+      std::make_pair(AutoDetectDcaCalib, "autoDetectDcaCalib")};
     ///////////////////////////////////////////////////////////////////////////////////
     LOG(info) << "[TrackTuner]";
     LOG(info) << "[TrackTuner] >>> Parameters before the custom settings";
@@ -224,6 +334,8 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     LOG(info) << "[TrackTuner]     usePvRefitCorrections = " << usePvRefitCorrections;
     LOG(info) << "[TrackTuner]     qOverPtMC = " << qOverPtMC;
     LOG(info) << "[TrackTuner]     qOverPtData = " << qOverPtData;
+    LOG(info) << "[TrackTuner]     nPhiBins = " << nPhiBins;
+    LOG(info) << "[TrackTuner]     autoDetectDcaCalib = " << autoDetectDcaCalib;
 
     // ##############################################################################################
     // ########   split the original string, separating substrings delimited by "|" symbol   ########
@@ -240,12 +352,12 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
 
     LOG(info) << "[TrackTuner]";
     LOG(info) << "[TrackTuner] >>> String slices:";
-    for (std::string& s : slices)
+    for (const std::string& s : slices)
       LOG(info) << "[TrackTuner]     " << s;
 
     /// check if the number of input parameters is correct
     if (static_cast<uint8_t>(slices.size()) != NPars) {
-      LOG(fatal) << "[TrackTuner] " << slices.size() << " parameters provided, while " << NPars << " are expected. Fix it!";
+      LOG(fatal) << "[TrackTuner] " << slices.size() << " parameters provided, while " << static_cast<int>(NPars) << " are expected. Fix it!";
     }
 
     // ###################################################################################################################
@@ -254,7 +366,7 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     /// lambda expression to search for the parameter value (as string) in the configuration string
     auto getValueString = [&](uint8_t iPar) {
       /// this allows to search the parameter configuration even if they are not written in order
-      auto it = std::find_if(slices.begin(), slices.end(), [&](std::string s) { return s.find(mapParNames[iPar]) != std::string::npos; });
+      auto it = std::find_if(slices.begin(), slices.end(), [&](const std::string& s) { return s.find(mapParNames[iPar]) != std::string::npos; });
       if (it == std::end(slices)) {
         // parameter not found
         LOG(fatal) << "\"" << mapParNames[iPar] << "\" not found in the configuration string";
@@ -268,7 +380,7 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     };
 
     /// further lambda expression to handle bool initialization
-    auto setBoolFromString = [=](bool& b, std::string str) {
+    auto setBoolFromString = [=](bool& b, const std::string& str) {
       if (!str.compare("1") || str.find("true") != std::string::npos || str.find("True") != std::string::npos || str.find("TRUE") != std::string::npos) {
         b = true;
       } else if (!str.compare("0") || str.find("false") != std::string::npos || str.find("False") != std::string::npos || str.find("FALSE") != std::string::npos) {
@@ -278,13 +390,16 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
       }
     };
 
-    std::string outputString = "";
     LOG(info) << "[TrackTuner] ";
     LOG(info) << "[TrackTuner] >>> Parameters after the custom settings";
+    // Configure autoDetectDcaCalib
+    setBoolFromString(autoDetectDcaCalib, getValueString(AutoDetectDcaCalib));
+    outputString += "autoDetectDcaCalib=" + std::to_string(autoDetectDcaCalib);
+    LOG(info) << "[TrackTuner]     autoDetectDcaCalib = " << autoDetectDcaCalib;
     // Configure debugInfo
     setBoolFromString(debugInfo, getValueString(DebugInfo));
     LOG(info) << "[TrackTuner]     debugInfo = " << debugInfo;
-    outputString += "debugInfo=" + std::to_string(debugInfo);
+    outputString += ", debugInfo=" + std::to_string(debugInfo);
     // Configure updateTrackDCAs
     setBoolFromString(updateTrackDCAs, getValueString(UpdateTrackDCAs));
     LOG(info) << "[TrackTuner]     updateTrackDCAs = " << updateTrackDCAs;
@@ -310,10 +425,6 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     LOG(info) << "[TrackTuner]     isInputFileFromCCDB = " << isInputFileFromCCDB;
     outputString += ", isInputFileFromCCDB=" + std::to_string(isInputFileFromCCDB);
     // Configure pathInputFile
-    pathInputFile = getValueString(PathInputFile);
-    outputString += ", pathInputFile=" + pathInputFile;
-    LOG(info) << "[TrackTuner]     pathInputFile = " << pathInputFile;
-    // Configure pathInputFile
     pathFileQoverPt = getValueString(PathFileQoverPt);
     outputString += ", pathFileQoverPt=" + pathFileQoverPt;
     LOG(info) << "[TrackTuner]     pathFileQoverPt = " << pathFileQoverPt;
@@ -337,7 +448,21 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     qOverPtData = std::stof(getValueString(QOverPtData));
     outputString += ", qOverPtData=" + std::to_string(qOverPtData);
     LOG(info) << "[TrackTuner]     qOverPtData = " << qOverPtData;
-
+    // Configure nPhiBins
+    nPhiBins = std::stoi(getValueString(NPhiBins));
+    outputString += ", nPhiBins=" + std::to_string(nPhiBins);
+    if (nPhiBins < 0)
+      LOG(fatal) << "[TrackTuner]   negative nPhiBins!" << nPhiBins;
+    LOG(info) << "[TrackTuner]     nPhiBins = " << nPhiBins;
+    // Configure pathInputFile
+    if (!autoDetectDcaCalib) {
+      // path input file from the input string
+      pathInputFile = getValueString(PathInputFile);
+      outputString += ", pathInputFile=" + pathInputFile;
+      LOG(info) << "[TrackTuner]     pathInputFile = " << pathInputFile;
+    } else {
+      LOG(info) << "[TrackTuner]     pathInputFile still invalid for the moment --> it will be updated by the \"auto-detect\"";
+    }
     /// declare that the configuration is done via an input string
     isConfigFromString = true;
 
@@ -358,13 +483,16 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     LOG(info) << "[TrackTuner] /=/#/                                                               /=/#/";
     LOG(info) << "[TrackTuner] /=/#/=/#/=/#/=/#/=/#/=/#/=/#/=/#/=/#/=/#/=/#/=/#/=/#/=/#/=/#/=/#/=/#/=/#/";
 
-    std::string outputString = "";
     LOG(info) << "[TrackTuner] ";
     LOG(info) << "[TrackTuner] >>> Parameters after the custom settings";
+    // Configure autoDetectDcaCalib
+    autoDetectDcaCalib = cfgAutoDetectDcaCalib;
+    outputString += "autoDetectDcaCalib=" + std::to_string(autoDetectDcaCalib);
+    LOG(info) << "[TrackTuner]     autoDetectDcaCalib = " << autoDetectDcaCalib;
     // Configure debugInfo
     debugInfo = cfgDebugInfo;
     LOG(info) << "[TrackTuner]     debugInfo = " << debugInfo;
-    outputString += "debugInfo=" + std::to_string(debugInfo);
+    outputString += ", debugInfo=" + std::to_string(debugInfo);
     // Configure updateTrackDCAs
     updateTrackDCAs = cfgUpdateTrackDCAs;
     LOG(info) << "[TrackTuner]     updateTrackDCAs = " << updateTrackDCAs;
@@ -389,11 +517,7 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     isInputFileFromCCDB = cfgIsInputFileFromCCDB;
     LOG(info) << "[TrackTuner]     isInputFileFromCCDB = " << isInputFileFromCCDB;
     outputString += ", isInputFileFromCCDB=" + std::to_string(isInputFileFromCCDB);
-    // Configure pathInputFile
-    pathInputFile = cfgPathInputFile;
-    outputString += ", pathInputFile=" + pathInputFile;
-    LOG(info) << "[TrackTuner]     pathInputFile = " << pathInputFile;
-    // Configure pathInputFile
+    // Configure pathQoverPt
     pathFileQoverPt = cfgPathFileQoverPt;
     outputString += ", pathFileQoverPt=" + pathFileQoverPt;
     LOG(info) << "[TrackTuner]     pathFileQoverPt = " << pathFileQoverPt;
@@ -417,6 +541,21 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     qOverPtData = cfgQOverPtData;
     outputString += ", qOverPtData=" + std::to_string(qOverPtData);
     LOG(info) << "[TrackTuner]     qOverPtData = " << qOverPtData;
+    // Configure nPhiBins
+    nPhiBins = cfgNPhiBins;
+    outputString += ", nPhiBins=" + std::to_string(nPhiBins);
+    if (nPhiBins < 0)
+      LOG(fatal) << "[TrackTuner]   negative nPhiBins!" << nPhiBins;
+    LOG(info) << "[TrackTuner]     nPhiBins = " << nPhiBins;
+    // Configure pathInputFile
+    if (!autoDetectDcaCalib) {
+      // path input file from configurable
+      pathInputFile = cfgPathInputFile;
+      outputString += ", pathInputFile=" + pathInputFile;
+      LOG(info) << "[TrackTuner]     pathInputFile = " << pathInputFile;
+    } else {
+      LOG(info) << "[TrackTuner]     pathInputFile still invalid for the moment --> it will be updated by the \"auto-detect\"";
+    }
 
     /// declare that the configuration is done via the Configurables
     isConfigFromConfigurables = true;
@@ -429,99 +568,145 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
 
   void getDcaGraphs()
   {
-    std::string fullNameInputFile = "";
-    std::string fullNameFileQoverPt = "";
-
-    if (isInputFileFromCCDB) {
-      /// use input correction file from CCDB
-
-      // properly init the ccdb
-      std::string tmpDir = ".";
-      ccdbApi.init("http://alice-ccdb.cern.ch");
-
-      // get the DCA correction file from CCDB
-      if (!ccdbApi.retrieveBlob(pathInputFile.data(), tmpDir, metadata, 0, false, nameInputFile.data())) {
-        LOG(fatal) << "[TrackTuner] input file for DCA corrections not found on CCDB, please check the pathInputFile and nameInputFile!";
-      }
-
-      // get the Q/Pt correction file from CCDB
-      if (!ccdbApi.retrieveBlob(pathFileQoverPt.data(), tmpDir, metadata, 0, false, nameFileQoverPt.data())) {
-        LOG(fatal) << "[TrackTuner] input file for Q/Pt corrections not found on CCDB, please check the pathFileQoverPt and nameFileQoverPt!";
-      }
-      // point to the file in the tmp local folder
-      fullNameInputFile = tmpDir + std::string("/") + nameInputFile;
-      fullNameFileQoverPt = tmpDir + std::string("/") + nameFileQoverPt;
-    } else {
-      /// use input correction file from local filesystem
-      fullNameInputFile = pathInputFile + std::string("/") + nameInputFile;
-      fullNameFileQoverPt = pathFileQoverPt + std::string("/") + nameFileQoverPt;
-    }
-    /// open the input correction file
-    std::unique_ptr<TFile> inputFile(TFile::Open(fullNameInputFile.c_str(), "READ"));
-    if (!inputFile.get()) {
-      LOG(fatal) << "Something wrong with the input file" << fullNameInputFile << " for dca correction. Fix it!";
-    }
-    std::unique_ptr<TFile> inputFileQoverPt(TFile::Open(fullNameFileQoverPt.c_str(), "READ"));
-    if (!inputFileQoverPt.get() && (updateCurvature || updateCurvatureIU)) {
-      LOG(fatal) << "Something wrong with the Q/Pt input file" << fullNameFileQoverPt << " for Q/Pt correction. Fix it!";
+    /// abort if the graphs were already loaded
+    if (areGraphsConfigured) {
+      LOG(fatal) << "[TrackTuner::getDcaGraphs()] Function already called, i.e. the calibrations are already loaded. This further call should never happen. Aborting...";
     }
 
-    // choose wheter to use corrections w/ PV refit or w/o it, and retrieve the proper TDirectory
-    std::string dir = "woPvRefit";
-    if (usePvRefitCorrections) {
-      dir = "withPvRefit";
-    }
-    TDirectory* td = dynamic_cast<TDirectory*>(inputFile->Get(dir.c_str()));
-    if (!td) {
-      LOG(fatal) << "TDirectory " << td << " not found in input file" << inputFile->GetName() << ". Fix it!";
-    }
-
-    std::string grDcaXYResNameMC = "resCurrentDcaXY";
-    std::string grDcaXYMeanNameMC = "meanCurrentDcaXY";
-    std::string grDcaXYPullNameMC = "pullsCurrentDcaXY";
-    std::string grDcaXYResNameData = "resUpgrDcaXY";
-    std::string grDcaXYMeanNameData = "meanUpgrDcaXY";
-    std::string grDcaXYPullNameData = "pullsUpgrDcaXY";
-
-    grDcaXYResVsPtPionMC.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaXYResNameMC.c_str())));
-    grDcaXYResVsPtPionData.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaXYResNameData.c_str())));
-    grDcaXYMeanVsPtPionMC.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaXYMeanNameMC.c_str())));
-    grDcaXYMeanVsPtPionData.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaXYMeanNameData.c_str())));
-    grDcaXYPullVsPtPionMC.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaXYPullNameMC.c_str())));
-    grDcaXYPullVsPtPionData.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaXYPullNameData.c_str())));
-    if (!grDcaXYResVsPtPionMC.get() || !grDcaXYResVsPtPionData.get() || !grDcaXYMeanVsPtPionMC.get() || !grDcaXYMeanVsPtPionData.get() || !grDcaXYPullVsPtPionMC.get() || !grDcaXYPullVsPtPionData.get()) {
-      LOG(fatal) << "Something wrong with the names of the correction graphs for dcaXY. Fix it!";
-    }
-
-    std::string grDcaZResNameMC = "resCurrentDcaZ";
-    std::string grDcaZMeanNameMC = "meanCurrentDcaZ";
-    std::string grDcaZPullNameMC = "pullsCurrentDcaZ";
-    std::string grDcaZResNameData = "resUpgrDcaZ";
-    std::string grDcaZMeanNameData = "meanUpgrDcaZ";
-    std::string grDcaZPullNameData = "pullsUpgrDcaZ";
-
-    grDcaZResVsPtPionMC.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaZResNameMC.c_str())));
-    grDcaZResVsPtPionData.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaZResNameData.c_str())));
-    grDcaZMeanVsPtPionMC.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaZMeanNameMC.c_str())));
-    grDcaZMeanVsPtPionData.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaZMeanNameData.c_str())));
-    grDcaZPullVsPtPionMC.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaZPullNameMC.c_str())));
-    grDcaZPullVsPtPionData.reset(dynamic_cast<TGraphErrors*>(td->Get(grDcaZPullNameData.c_str())));
-    if (!grDcaZResVsPtPionMC.get() || !grDcaZResVsPtPionData.get() || !grDcaZMeanVsPtPionMC.get() || !grDcaZMeanVsPtPionData.get() || !grDcaZPullVsPtPionMC.get() || !grDcaZPullVsPtPionData.get()) {
-      LOG(fatal) << "Something wrong with the names of the correction graphs for dcaZ. Fix it!";
-    }
+    std::string fullNameInputFile = pathInputFile + std::string("/") + nameInputFile;
+    std::string fullNameFileQoverPt = pathFileQoverPt + std::string("/") + nameFileQoverPt;
+    TList* ccdb_object_dca = nullptr;
+    TList* ccdb_object_qoverpt = nullptr;
 
     std::string grOneOverPtPionNameMC = "sigmaVsPtMc";
     std::string grOneOverPtPionNameData = "sigmaVsPtData";
 
-    if (updateCurvature || updateCurvatureIU) {
-      grOneOverPtPionMC.reset(dynamic_cast<TGraphErrors*>(inputFileQoverPt->Get(grOneOverPtPionNameMC.c_str())));
-      grOneOverPtPionData.reset(dynamic_cast<TGraphErrors*>(inputFileQoverPt->Get(grOneOverPtPionNameData.c_str())));
+    if (isInputFileFromCCDB) {
+      /// use input correction file from CCDB
+
+      // get the TList from the DCA correction file present in CCDB
+      ccdb_object_dca = o2::ccdb::BasicCCDBManager::instance().get<TList>(pathInputFile);
+      LOG(info) << "[TrackTuner] ccdb_object_dca " << ccdb_object_dca;
+
+      // get the TList from the Q/Pt correction file from CCDB
+      if (updateCurvature || updateCurvatureIU) {
+        ccdb_object_qoverpt = o2::ccdb::BasicCCDBManager::instance().get<TList>(pathFileQoverPt);
+        LOG(info) << "[TrackTuner] ccdb_object_qoverpt " << ccdb_object_qoverpt;
+      }
+    } else {
+      /// use input correction file from local filesystem
+
+      /// open the input correction file - dca correction
+      TFile* inputFile = TFile::Open(fullNameInputFile.c_str(), "READ");
+      if (!inputFile) {
+        LOG(fatal) << "[TrackTuner] Something wrong with the local input file" << fullNameInputFile << " for dca correction. Fix it!";
+      }
+      ccdb_object_dca = dynamic_cast<TList*>(inputFile->Get("ccdb_object"));
+
+      /// open the input correction file - q/pt correction
+      TFile* inputFileQoverPt = TFile::Open(fullNameFileQoverPt.c_str(), "READ");
+      if (!inputFileQoverPt && (updateCurvature || updateCurvatureIU)) {
+        LOG(fatal) << "Something wrong with the Q/Pt input file" << fullNameFileQoverPt << " for Q/Pt correction. Fix it!";
+      }
+      ccdb_object_qoverpt = dynamic_cast<TList*>(inputFileQoverPt->Get("ccdb_object"));
     }
+
+    // choose wheter to use corrections w/ PV refit or w/o it, and retrieve the proper TList
+    std::string dir = "woPvRefit";
+    if (usePvRefitCorrections) {
+      dir = "withPvRefit";
+    }
+    TList* td = dynamic_cast<TList*>(ccdb_object_dca->FindObject(dir.c_str()));
+    if (!td) {
+      LOG(fatal) << "[TrackTuner] TList " << td << " not found in ccdb_object_dca. Fix it!";
+    }
+
+    int inputNphiBins = nPhiBins;
+    if (inputNphiBins == 0)
+      nPhiBins = 1; // old phi_independent settings
+
+    // reserve  memory and initialize vector for needed number of graphs
+    grDcaXYResVsPtPionMC.resize(nPhiBins);
+    grDcaXYResVsPtPionData.resize(nPhiBins);
+
+    grDcaZResVsPtPionMC.resize(nPhiBins);
+    grDcaZResVsPtPionData.resize(nPhiBins);
+
+    grDcaXYMeanVsPtPionMC.resize(nPhiBins);
+    grDcaXYMeanVsPtPionData.resize(nPhiBins);
+
+    grDcaZMeanVsPtPionMC.resize(nPhiBins);
+    grDcaZMeanVsPtPionData.resize(nPhiBins);
+
+    grDcaXYPullVsPtPionMC.resize(nPhiBins);
+    grDcaXYPullVsPtPionData.resize(nPhiBins);
+
+    grDcaZPullVsPtPionMC.resize(nPhiBins);
+    grDcaZPullVsPtPionData.resize(nPhiBins);
+
+    /// Lambda expression to get the TGraphErrors from file
+    auto loadGraph = [&](int phiBin, const std::string& strBaseName) -> TGraphErrors* {
+      std::string strGraphName = inputNphiBins != 0 ? fmt::format("{}_{}", strBaseName, phiBin) : strBaseName;
+      TObject* obj = td->FindObject(strGraphName.c_str());
+      if (!obj) {
+        LOG(fatal) << "[TrackTuner]     TGraphErrors not found in the Input Root file: " << strGraphName;
+        td->ls();
+        return nullptr;
+      }
+      return dynamic_cast<TGraphErrors*>(obj);
+    };
+
+    if (inputNphiBins != 0) {
+      LOG(info) << "[TrackTuner]    Loading phi-dependent XY TGraphErrors";
+    }
+    for (int iPhiBin = 0; iPhiBin < nPhiBins; ++iPhiBin) {
+
+      grDcaXYResVsPtPionMC[iPhiBin].reset(loadGraph(iPhiBin, "resCurrentDcaXY"));
+      grDcaXYResVsPtPionData[iPhiBin].reset(loadGraph(iPhiBin, "resUpgrDcaXY"));
+      grDcaXYMeanVsPtPionMC[iPhiBin].reset(loadGraph(iPhiBin, "meanCurrentDcaXY"));
+      grDcaXYMeanVsPtPionData[iPhiBin].reset(loadGraph(iPhiBin, "meanUpgrDcaXY"));
+      grDcaXYPullVsPtPionMC[iPhiBin].reset(loadGraph(iPhiBin, "pullsCurrentDcaXY"));
+      grDcaXYPullVsPtPionData[iPhiBin].reset(loadGraph(iPhiBin, "pullsUpgrDcaXY"));
+
+      if (!grDcaXYResVsPtPionMC[iPhiBin].get() || !grDcaXYResVsPtPionData[iPhiBin].get() || !grDcaXYMeanVsPtPionMC[iPhiBin].get() || !grDcaXYMeanVsPtPionData[iPhiBin].get() || !grDcaXYPullVsPtPionMC[iPhiBin].get() || !grDcaXYPullVsPtPionData[iPhiBin].get()) {
+        LOG(fatal) << "[TrackTuner]     Something wrong with the names of the correction graphs for dcaXY. Fix it! Problematic phi bin is" << iPhiBin;
+      }
+    }
+
+    if (inputNphiBins != 0) {
+      LOG(info) << "[TrackTuner]    Loading phi-dependent Z TGraphErrors";
+    }
+    for (int iPhiBin = 0; iPhiBin < nPhiBins; ++iPhiBin) {
+      grDcaZResVsPtPionMC[iPhiBin].reset(loadGraph(iPhiBin, "resCurrentDcaZ"));
+      grDcaZMeanVsPtPionMC[iPhiBin].reset(loadGraph(iPhiBin, "meanCurrentDcaZ"));
+      grDcaZPullVsPtPionMC[iPhiBin].reset(loadGraph(iPhiBin, "pullsCurrentDcaZ"));
+      grDcaZResVsPtPionData[iPhiBin].reset(loadGraph(iPhiBin, "resUpgrDcaZ"));
+      grDcaZMeanVsPtPionData[iPhiBin].reset(loadGraph(iPhiBin, "meanUpgrDcaZ"));
+      grDcaZPullVsPtPionData[iPhiBin].reset(loadGraph(iPhiBin, "pullsUpgrDcaZ"));
+
+      if (!grDcaZResVsPtPionMC[iPhiBin].get() || !grDcaZResVsPtPionData[iPhiBin].get() || !grDcaZMeanVsPtPionMC[iPhiBin].get() || !grDcaZMeanVsPtPionData[iPhiBin].get() || !grDcaZPullVsPtPionMC[iPhiBin].get() || !grDcaZPullVsPtPionData[iPhiBin].get()) {
+        LOG(fatal) << "[TrackTuner] Something wrong with the names of the correction graphs for dcaZ. Fix it! Problematic phi bin is" << iPhiBin;
+      }
+    }
+
+    if (updateCurvature || updateCurvatureIU) {
+      grOneOverPtPionMC.reset(dynamic_cast<TGraphErrors*>(ccdb_object_qoverpt->FindObject(grOneOverPtPionNameMC.c_str())));
+      grOneOverPtPionData.reset(dynamic_cast<TGraphErrors*>(ccdb_object_qoverpt->FindObject(grOneOverPtPionNameData.c_str())));
+    }
+
+    /// if we arrive here, it means that the graphs are all set
+    areGraphsConfigured = true;
+
   } // getDcaGraphs() ends here
 
   template <typename T1, typename T2, typename T3, typename T4, typename H>
   void tuneTrackParams(T1 const& mcparticle, T2& trackParCov, T3 const& matCorr, T4 dcaInfoCov, H hQA)
   {
+    /// abort if the calibrations are not loaded
+    if (!areGraphsConfigured) {
+      LOG(fatal) << "[TrackTuner::tuneTrackParams()] Function called, but calibration graphs not configured. Have you called the function TrackTuner::getDcaGraphs()? Aborting...";
+    }
+
     double ptMC = mcparticle.pt();
     double dcaXYResMC = 0.0; // sd0rpo=0.;
     double dcaZResMC = 0.0;  // sd0zo =0.;
@@ -538,11 +723,17 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     double dcaZPullMC = 1.0;
     double dcaZPullData = 1.0;
 
-    dcaXYResMC = evalGraph(ptMC, grDcaXYResVsPtPionMC.get());
-    dcaXYResData = evalGraph(ptMC, grDcaXYResVsPtPionData.get());
+    // get phibin
+    double phiMC = mcparticle.phi();
+    if (phiMC < 0.)
+      phiMC += o2::constants::math::TwoPI;                                    // 2 * std::numbers::pi;//
+    int phiBin = phiMC / (o2::constants::math::TwoPI + 0.0000001) * nPhiBins; // 0.0000001 just a numerical protection
 
-    dcaZResMC = evalGraph(ptMC, grDcaZResVsPtPionMC.get());
-    dcaZResData = evalGraph(ptMC, grDcaZResVsPtPionData.get());
+    dcaXYResMC = evalGraph(ptMC, grDcaXYResVsPtPionMC[phiBin].get());
+    dcaXYResData = evalGraph(ptMC, grDcaXYResVsPtPionData[phiBin].get());
+
+    dcaZResMC = evalGraph(ptMC, grDcaZResVsPtPionMC[phiBin].get());
+    dcaZResData = evalGraph(ptMC, grDcaZResVsPtPionData[phiBin].get());
 
     // For Q/Pt corrections, files on CCDB will be used if both qOverPtMC and qOverPtData are null
     if (updateCurvature || updateCurvatureIU) {
@@ -560,14 +751,15 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     } // updateCurvature, updateCurvatureIU block ends here
 
     if (updateTrackDCAs) {
-      dcaXYMeanMC = evalGraph(ptMC, grDcaXYMeanVsPtPionMC.get());
-      dcaXYMeanData = evalGraph(ptMC, grDcaXYMeanVsPtPionData.get());
 
-      dcaXYPullMC = evalGraph(ptMC, grDcaXYPullVsPtPionMC.get());
-      dcaXYPullData = evalGraph(ptMC, grDcaXYPullVsPtPionData.get());
+      dcaXYMeanMC = evalGraph(ptMC, grDcaXYMeanVsPtPionMC[phiBin].get());
+      dcaXYMeanData = evalGraph(ptMC, grDcaXYMeanVsPtPionData[phiBin].get());
 
-      dcaZPullMC = evalGraph(ptMC, grDcaZPullVsPtPionMC.get());
-      dcaZPullData = evalGraph(ptMC, grDcaZPullVsPtPionData.get());
+      dcaXYPullMC = evalGraph(ptMC, grDcaXYPullVsPtPionMC[phiBin].get());
+      dcaXYPullData = evalGraph(ptMC, grDcaXYPullVsPtPionData[phiBin].get());
+
+      dcaZPullMC = evalGraph(ptMC, grDcaZPullVsPtPionMC[phiBin].get());
+      dcaZPullData = evalGraph(ptMC, grDcaZPullVsPtPionData[phiBin].get());
     }
     //  Unit conversion, is it required ??
     dcaXYResMC *= 1.e-4;
@@ -661,7 +853,7 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
       //       if(spt1o>0.)             covar[14]*=(spt1n/spt1o)*(spt1n/spt1o);//ptpt
       sigma1Pt2 = trackParCov.getSigma1Pt2();
       if (qOverPtMC > 0.) {
-        sigma1Pt2 *= (qOverPtData / qOverPtMC);
+        sigma1Pt2 *= (qOverPtData / qOverPtMC) * (qOverPtData / qOverPtMC);
         trackParCov.setCov(sigma1Pt2, 14);
       }
     } // updateCurvatureIU block ends here
@@ -676,12 +868,17 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
     if (updateTrackDCAs) {
       // propagate to DCA with respect to the Production point
       o2::base::Propagator::Instance()->propagateToDCABxByBz(vtxMC, trackParCov, 2.f, matCorr, dcaInfoCov);
+      if (debugInfo) {
+        LOG(info) << "phi MC" << mcparticle.phi();
+        LOG(info) << "alpha track" << trackParCov.getAlpha();
+      }
       // double d0zo  =param  [1];
       double trackParDcaZRec = trackParCov.getZ();
       // double d0rpo =param  [0];
       double trackParDcaXYRec = trackParCov.getY();
       float mcVxRotated = mcparticle.vx() * std::cos(trackParCov.getAlpha()) + mcparticle.vy() * std::sin(trackParCov.getAlpha()); // invert
       float mcVyRotated = mcparticle.vy() * std::cos(trackParCov.getAlpha()) - mcparticle.vx() * std::sin(trackParCov.getAlpha());
+
       if (debugInfo) {
         // LOG(info) << "mcVy " <<  mcparticle.vy()   <<  std::endl;
         LOG(info) << "mcVxRotated " << mcVxRotated;
@@ -722,7 +919,7 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
       double deltaDcaXYmean = dcaXYMeanData - dcaXYMeanMC;
 
       // double d0rpn =d0rpmc+dd0rpn-dd0mrpn;
-      double trackParDcaXYTuned = trackParDcaXYMC + deltaDcaXYTuned - deltaDcaXYmean;
+      double trackParDcaXYTuned = trackParDcaXYMC + deltaDcaXYTuned + deltaDcaXYmean;
 
       if (debugInfo) {
         LOG(info) << dcaZResMC << ", " << dcaZResData << ", diff(DcaZ - DcaZMC): " << deltaDcaZ << ", diff upgraded: " << deltaDcaZTuned << ", DcaZ Data : " << trackParDcaZTuned;
@@ -842,7 +1039,7 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
         //       if(spt1o>0.)             covar[14]*=(spt1n/spt1o)*(spt1n/spt1o);//ptpt
         sigma1Pt2 = trackParCov.getSigma1Pt2();
         if (qOverPtMC > 0.) {
-          sigma1Pt2 *= (qOverPtData / qOverPtMC);
+          sigma1Pt2 *= (qOverPtData / qOverPtMC) * (qOverPtData / qOverPtMC);
           trackParCov.setCov(sigma1Pt2, 14);
         }
       } // ---> track cov matrix elements for 1/Pt ends here
@@ -954,7 +1151,7 @@ struct TrackTuner : o2::framework::ConfigurableGroup {
   {
 
     if (!graph) {
-      printf("\tevalGraph fails !\n");
+      LOG(fatal) << "\t evalGraph fails !\n";
       return 0.;
     }
     int nPoints = graph->GetN();

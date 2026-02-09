@@ -14,29 +14,37 @@
 // This code loops over photon candidate and fill histograms
 //    Please write to: daiki.sekihata@cern.ch
 
-#include <cstring>
-#include <iterator>
+#include "EMPhotonEventCut.h"
 
-#include "TString.h"
-#include "Math/Vector4D.h"
-#include "Framework/runDataProcessing.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoAHelpers.h"
-#include "ReconstructionDataFormats/Track.h"
-#include "Common/Core/trackUtilities.h"
-#include "Common/Core/TrackSelection.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "Common/DataModel/EventSelection.h"
-#include "Common/DataModel/Centrality.h"
-#include "Common/DataModel/PIDResponse.h"
-#include "Common/Core/RecoDecay.h"
-#include "PWGEM/PhotonMeson/DataModel/gammaTables.h"
-#include "PWGEM/PhotonMeson/Core/V0PhotonCut.h"
-#include "PWGEM/PhotonMeson/Core/PHOSPhotonCut.h"
-#include "PWGEM/PhotonMeson/Core/EMCPhotonCut.h"
 #include "PWGEM/PhotonMeson/Core/CutsLibrary.h"
+#include "PWGEM/PhotonMeson/Core/EMCPhotonCut.h"
 #include "PWGEM/PhotonMeson/Core/HistogramsLibrary.h"
+#include "PWGEM/PhotonMeson/Core/PHOSPhotonCut.h"
+#include "PWGEM/PhotonMeson/Core/V0PhotonCut.h"
+#include "PWGEM/PhotonMeson/DataModel/gammaTables.h"
+
+#include "Common/CCDB/TriggerAliases.h"
+#include "Common/Core/RecoDecay.h"
+#include "Common/DataModel/Centrality.h"
+
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Configurable.h>
+#include <Framework/InitContext.h>
+#include <Framework/runDataProcessing.h>
+
+#include <TH2.h>
+#include <THashList.h>
+#include <TString.h>
+
+#include <array>
+#include <cmath>
+#include <cstring>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
 
 using namespace o2;
 using namespace o2::aod;
@@ -45,7 +53,7 @@ using namespace o2::framework::expressions;
 using namespace o2::soa;
 using namespace o2::aod::pwgem::photon;
 
-using MyCollisions = soa::Join<aod::EMEvents, aod::EMEventsMult, aod::EMEventsCent, aod::EMEventsQvec>;
+using MyCollisions = soa::Join<aod::EMEvents, aod::EMEventsAlias, aod::EMEventsMult, aod::EMEventsCent, aod::EMEventsQvec>;
 using MyCollision = MyCollisions::iterator;
 
 using MyV0Photons = soa::Join<aod::V0PhotonsKF, aod::V0KFEMEventIds>;
@@ -206,15 +214,6 @@ struct SinglePhoton {
 
   void DefineEMCCuts()
   {
-    const float a = EMC_TM_Eta->at(0);
-    const float b = EMC_TM_Eta->at(1);
-    const float c = EMC_TM_Eta->at(2);
-
-    const float d = EMC_TM_Phi->at(0);
-    const float e = EMC_TM_Phi->at(1);
-    const float f = EMC_TM_Phi->at(2);
-    LOGF(info, "EMCal track matching parameters : a = %f, b = %f, c = %f, d = %f, e = %f, f = %f", a, b, c, d, e, f);
-
     TString cutNamesStr = fConfigEMCCuts.value;
     if (!cutNamesStr.IsNull()) {
       std::unique_ptr<TObjArray> objArray(cutNamesStr.Tokenize(","));
@@ -228,12 +227,8 @@ struct SinglePhoton {
           custom_cut->SetM02Range(EMC_minM02, EMC_maxM02);
           custom_cut->SetTimeRange(EMC_minTime, EMC_maxTime);
 
-          custom_cut->SetTrackMatchingEta([a, b, c](float pT) {
-            return a + pow(pT + b, c);
-          });
-          custom_cut->SetTrackMatchingPhi([d, e, f](float pT) {
-            return d + pow(pT + e, f);
-          });
+          custom_cut->SetTrackMatchingEtaParams(EMC_TM_Eta->at(0), EMC_TM_Eta->at(1), EMC_TM_Eta->at(2));
+          custom_cut->SetTrackMatchingPhiParams(EMC_TM_Phi->at(0), EMC_TM_Phi->at(1), EMC_TM_Phi->at(2));
 
           custom_cut->SetMinEoverP(EMC_Eoverp);
           custom_cut->SetUseExoticCut(EMC_UseExoticCut);
@@ -255,7 +250,7 @@ struct SinglePhoton {
   {
     bool is_selected = false;
     if constexpr (photontype == EMDetType::kPCM) {
-      is_selected = cut1.template IsSelected<aod::V0Legs>(g1);
+      is_selected = cut1.template IsSelected<decltype(g1), aod::V0Legs>(g1);
     } else if constexpr (photontype == EMDetType::kPHOS) {
       is_selected = cut1.template IsSelected<int>(g1); // dummy, because track matching is not ready.
       //} else if constexpr (photontype == EMDetType::kEMC) {
@@ -266,8 +261,8 @@ struct SinglePhoton {
     return is_selected;
   }
 
-  template <EMDetType photontype, typename TEvents, typename TPhotons1, typename TPreslice1, typename TCuts1, typename TV0Legs, typename TEMCMatchedTracks>
-  void FillPhoton(TEvents const& collisions, TPhotons1 const& photons1, TPreslice1 const& perCollision1, TCuts1 const& cuts1, TV0Legs const&, TEMCMatchedTracks const&)
+  template <EMDetType photontype, typename TEvents, typename TPhotons1, typename TPreslice1, typename TCuts1, typename TV0Legs>
+  void FillPhoton(TEvents const& collisions, TPhotons1 const& photons1, TPreslice1 const& perCollision1, TCuts1 const& cuts1, TV0Legs const&)
   {
     THashList* list_ev_before = static_cast<THashList*>(fMainList->FindObject("Event")->FindObject(detnames[photontype].data())->FindObject(event_types[0].data()));
     THashList* list_ev_after = static_cast<THashList*>(fMainList->FindObject("Event")->FindObject(detnames[photontype].data())->FindObject(event_types[1].data()));
@@ -339,17 +334,17 @@ struct SinglePhoton {
 
   void processPCM(MyCollisions const&, MyV0Photons const& v0photons, aod::V0Legs const& legs)
   {
-    FillPhoton<EMDetType::kPCM>(grouped_collisions, v0photons, perCollision, fPCMCuts, legs, nullptr);
+    FillPhoton<EMDetType::kPCM>(grouped_collisions, v0photons, perCollision, fPCMCuts, legs);
   }
 
   // void processPHOS(MyCollisions const& collisions, aod::PHOSClusters const& phosclusters)
   // {
-  //   FillPhoton<EMDetType::kPHOS>(grouped_collisions, phosclusters, perCollision_phos, fPHOSCuts, nullptr, nullptr);
+  //   FillPhoton<EMDetType::kPHOS>(grouped_collisions, phosclusters, perCollision_phos, fPHOSCuts, nullptr);
   // }
 
-  //  void processEMC(MyCollisions const& collisions, aod::SkimEMCClusters const& emcclusters, aod::SkimEMCMTs const& emcmatchedtracks)
+  //  void processEMC(MyCollisions const& collisions, aod::SkimEMCClusters const& emcclusters)
   //  {
-  //    FillPhoton<EMDetType::kEMC>(grouped_collisions, emcclusters, perCollision_emc, fEMCCuts, nullptr, emcmatchedtracks);
+  //    FillPhoton<EMDetType::kEMC>(grouped_collisions, emcclusters, perCollision_emc, fEMCCuts, nullptr);
   //  }
 
   void processDummy(MyCollisions::iterator const&) {}

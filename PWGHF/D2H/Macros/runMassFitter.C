@@ -16,58 +16,67 @@
 /// \author Mingyu Zhang <mingyu.zang@cern.ch>
 /// \author Xinye Peng  <xinye.peng@cern.ch>
 /// \author Biao Zhang <biao.zhang@cern.ch>
+/// \author Oleksii Lubynets <oleksii.lubynets@cern.ch>
+/// \author Phil Stahlhut <phil.lennart.stahlhut@cern.ch>
 
 #if !defined(__CINT__) || defined(__CLING__)
 
 #include "HFInvMassFitter.h"
 
-#include <iostream> // std::cout
-#include <string>   // std::string
-#include <vector>   // std::vector
+#include <TCanvas.h>
+#include <TDatabasePDG.h>
+#include <TFile.h>
+#include <TH1.h>
+#include <TH2.h>
+#include <TString.h>
+#include <TVirtualPad.h>
 
-#include <Riostream.h>
-#include <TROOT.h>
-
-// if .h file not found, please include your local rapidjson/document.h and rapidjson/filereadstream.h here
-#include <rapidjson/document.h>
+#include <rapidjson/document.h> // if .h file not found, please include your local rapidjson/document.h and rapidjson/filereadstream.h here
 #include <rapidjson/filereadstream.h>
+
+#include <Rtypes.h>
+#include <RtypesCore.h>
+
+#include <cmath>
+#include <cstdio>
+#include <functional>
+#include <map>
+#include <stdexcept>
+#include <string>
+#include <tuple>
+#include <type_traits>
+#include <vector>
 
 #endif
 
-using namespace std;
 using namespace rapidjson;
 
-int runMassFitter(TString configFileName = "config_massfitter.json");
+void runMassFitter(const std::string& configFileName = "config_massfitter.json");
 
-template <typename ValueType>
-void readArray(const Value& jsonArray, vector<ValueType>& output)
-{
-  for (auto it = jsonArray.Begin(); it != jsonArray.End(); it++) {
-    auto value = it->template Get<ValueType>();
-    output.emplace_back(value);
-  }
-}
+TFile* openFileWithNullptrCheck(const std::string& fileName, const std::string& option = "read");
 
-void parseStringArray(const Value& jsonArray, vector<string>& output)
-{
-  size_t arrayLength = jsonArray.Size();
-  for (size_t i = 0; i < arrayLength; i++) {
-    if (jsonArray[i].IsString()) {
-      output.emplace_back(jsonArray[i].GetString());
-    }
-  }
-}
+template <typename T>
+T* getObjectWithNullPtrCheck(TFile* fileIn, const std::string& objectName);
 
-void divideCanvas(TCanvas* c, int nPtBins);
-void setHistoStyle(TH1* histo, int color = kBlack, double markerSize = 1.);
+template <typename T>
+T readJsonField(const Document& config, const std::string& fieldName, const T& defaultValue);
 
-int runMassFitter(TString configFileName)
+template <typename T>
+T readJsonField(const Document& config, const std::string& fieldName);
+
+template <typename T>
+void readJsonVector(std::vector<T>& vec, const Document& config, const std::string& fieldName, bool isRequired = false);
+
+void divideCanvas(TCanvas* c, int nSliceVarBins);
+
+void setHistoStyle(TH1* histo, Color_t color = kBlack, Size_t markerSize = 1);
+
+void runMassFitter(const std::string& configFileName)
 {
   // load config
-  FILE* configFile = fopen(configFileName.Data(), "r");
-  if (!configFile) {
-    cerr << "ERROR: Missing configuration json file: " << configFileName << endl;
-    return -1;
+  FILE* configFile = fopen(configFileName.c_str(), "r");
+  if (configFile == nullptr) {
+    throw std::runtime_error("ERROR: Missing configuration json file: " + configFileName);
   }
 
   Document config;
@@ -76,523 +85,407 @@ int runMassFitter(TString configFileName)
   config.ParseStream(is);
   fclose(configFile);
 
-  Bool_t isMc = config["IsMC"].GetBool();
-  TString inputFileName = config["InFileName"].GetString();
-  TString reflFileName = config["ReflFileName"].GetString();
-  TString outputFileName = config["OutFileName"].GetString();
-  TString particleName = config["Particle"].GetString();
+  bool const isMc = readJsonField<bool>(config, "IsMC");
+  bool const writeSignalPar = readJsonField<bool>(config, "WriteSignalPar", true);
+  std::string const particleName = readJsonField<std::string>(config, "Particle");
+  std::string const collisionSystem = readJsonField<std::string>(config, "CollisionSystem", "");
+  std::string const inputFileName = readJsonField<std::string>(config, "InFileName");
+  std::string const reflFileName = readJsonField<std::string>(config, "ReflFileName", "");
+  TString outputFileName = readJsonField<std::string>(config, "OutFileName", "mInvFit.root");
 
-  vector<string> inputHistoName;
-  vector<string> promptHistoName;
-  vector<string> fdHistoName;
-  vector<string> reflHistoName;
-  vector<string> promptSecPeakHistoName;
-  vector<string> fdSecPeakHistoName;
-  vector<double> ptMin;
-  vector<double> ptMax;
-  vector<double> massMin;
-  vector<double> massMax;
-  vector<double> fixSigmaManual;
-  vector<int> nRebin;
-  vector<int> bkgFuncConfig;
-  vector<int> sgnFuncConfig;
+  std::vector<std::string> inputHistoName;
+  std::vector<std::string> promptHistoName;
+  std::vector<std::string> fdHistoName;
+  std::vector<std::string> reflHistoName;
+  std::vector<std::string> promptSecPeakHistoName;
+  std::vector<std::string> fdSecPeakHistoName;
+  std::vector<double> sliceVarMin;
+  std::vector<double> sliceVarMax;
+  std::vector<double> massMin;
+  std::vector<double> massMax;
+  std::vector<double> fixMeanManual;
+  std::vector<double> fixSigmaManual;
+  std::vector<double> fixSecondSigmaManual;
+  std::vector<double> fixFracDoubleGausManual;
+  std::vector<int> nRebin;
+  std::vector<int> bkgFunc;
+  std::vector<int> sgnFunc;
 
-  const Value& inputHistoNameValue = config["InputHistoName"];
-  parseStringArray(inputHistoNameValue, inputHistoName);
+  readJsonVector(inputHistoName, config, "InputHistoName", true);
+  readJsonVector(promptHistoName, config, "PromptHistoName");
+  readJsonVector(fdHistoName, config, "FDHistoName");
+  readJsonVector(reflHistoName, config, "ReflHistoName");
+  readJsonVector(promptSecPeakHistoName, config, "PromptSecPeakHistoName");
+  readJsonVector(fdSecPeakHistoName, config, "FDSecPeakHistoName");
 
-  const Value& promptHistoNameValue = config["PromptHistoName"];
-  parseStringArray(promptHistoNameValue, promptHistoName);
+  const bool fixMean = readJsonField<bool>(config, "FixMean", false);
+  const std::string meanFile = readJsonField<std::string>(config, "MeanFile", "");
+  readJsonVector(fixMeanManual, config, "FixMeanManual");
 
-  const Value& fdHistoNameValue = config["FDHistoName"];
-  parseStringArray(fdHistoNameValue, fdHistoName);
+  const bool fixSigma = readJsonField<bool>(config, "FixSigma", false);
+  const std::string sigmaFile = readJsonField<std::string>(config, "SigmaFile", "");
+  readJsonVector(fixSigmaManual, config, "FixSigmaManual");
 
-  const Value& reflHistoNameValue = config["ReflHistoName"];
-  parseStringArray(reflHistoNameValue, reflHistoName);
+  const bool fixSecondSigma = readJsonField<bool>(config, "FixSecondSigma", false);
+  const std::string secondSigmaFile = readJsonField<std::string>(config, "SecondSigmaFile", "");
+  readJsonVector(fixSecondSigmaManual, config, "FixSecondSigmaManual");
 
-  const Value& promptSecPeakHistoNameValue = config["PromptSecPeakHistoName"];
-  parseStringArray(promptSecPeakHistoNameValue, promptSecPeakHistoName);
+  const bool fixFracDoubleGaus = readJsonField<bool>(config, "FixFracDoubleGaus", false);
+  const std::string fracDoubleGausFile = readJsonField<std::string>(config, "FracDoubleGausFile", "");
+  readJsonVector(fixFracDoubleGausManual, config, "FixFracDoubleGausManual");
 
-  const Value& fdSecPeakHistoNameValue = config["FDSecPeakHistoName"];
-  parseStringArray(promptSecPeakHistoNameValue, promptSecPeakHistoName);
+  const TString sliceVarName = readJsonField<std::string>(config, "SliceVarName");
+  const TString sliceVarUnit = readJsonField<std::string>(config, "SliceVarUnit");
 
-  bool fixSigma = config["FixSigma"].GetBool();
-  string sigmaFile = config["SigmaFile"].GetString();
-  double sigmaMultFactor =
-    config["SigmaMultFactor"].GetDouble();
-  bool fixMean = config["FixMean"].GetBool();
-  string meanFile = config["MeanFile"].GetString();
+  readJsonVector(sliceVarMin, config, "SliceVarMin", true);
+  readJsonVector(sliceVarMax, config, "SliceVarMax", true);
 
-  const Value& fixSigmaManualValue = config["FixSigmaManual"];
-  readArray(fixSigmaManualValue, fixSigmaManual);
+  readJsonVector(massMin, config, "MassMin", true);
+  readJsonVector(massMax, config, "MassMax", true);
 
-  const Value& ptMinValue = config["PtMin"];
-  readArray(ptMinValue, ptMin);
+  readJsonVector(nRebin, config, "Rebin", true);
 
-  const Value& ptMaxValue = config["PtMax"];
-  readArray(ptMaxValue, ptMax);
+  bool const includeSecPeak = readJsonField<bool>(config, "InclSecPeak", false);
+  bool const useLikelihood = readJsonField<bool>(config, "UseLikelihood");
 
-  const Value& massMinValue = config["MassMin"];
-  readArray(massMinValue, massMin);
+  readJsonVector(bkgFunc, config, "BkgFunc", true);
+  readJsonVector(sgnFunc, config, "SgnFunc", true);
 
-  const Value& massMaxValue = config["MassMax"];
-  readArray(massMaxValue, massMax);
+  const bool enableRefl = readJsonField<bool>(config, "EnableRefl", false);
+  const bool drawBgPrefit = readJsonField<bool>(config, "DrawBgPrefit", true);
+  const bool highlightPeakRegion = readJsonField<bool>(config, "HighlightPeakRegion", true);
 
-  const Value& rebinValue = config["Rebin"];
-  readArray(rebinValue, nRebin);
+  const int nSliceVarBins = static_cast<int>(sliceVarMin.size());
+  std::vector<double> sliceVarLimits(nSliceVarBins + 1);
 
-  bool includeSecPeak = config["InclSecPeak"].GetBool();
-  string sigmaSecPeak = config["SigmaSecPeak"].GetString();
-  string sigmaFileSecPeak =
-    config["SigmaFileSecPeak"].GetString();
-  double sigmaMultFactorSecPeak =
-    config["SigmaMultFactorSecPeak"].GetDouble();
-  bool fixSigmaToFirstPeak =
-    config["FixSigmaToFirstPeak"].GetBool();
-  bool useLikelihood = config["UseLikelihood"].GetBool();
-
-  const Value& bkgFuncValue = config["BkgFunc"];
-  readArray(bkgFuncValue, bkgFuncConfig);
-
-  const Value& sgnFuncValue = config["SgnFunc"];
-  readArray(sgnFuncValue, sgnFuncConfig);
-
-  bool fixSigmaRatio = config["FixSigmaRatio"].GetBool();
-  TString sigmaRatioFile = config["SigmaRatioFile"].GetString();
-  bool boundMean = config["BoundMean"].GetBool();
-  bool enableRefl = config["EnableRefl"].GetBool();
-
-  const unsigned int nPtBins = ptMin.size();
-  int bkgFunc[nPtBins], sgnFunc[nPtBins];
-  double ptLimits[nPtBins + 1];
-
-  for (unsigned int iPt = 0; iPt < nPtBins; iPt++) {
-    ptLimits[iPt] = ptMin[iPt];
-    ptLimits[iPt + 1] = ptMax[iPt];
-
-    if (bkgFuncConfig[iPt] == 0) {
-      bkgFunc[iPt] = HFInvMassFitter::Expo;
-    } else if (bkgFuncConfig[iPt] == 1) {
-      bkgFunc[iPt] = HFInvMassFitter::Poly1;
-    } else if (bkgFuncConfig[iPt] == 2) {
-      bkgFunc[iPt] = HFInvMassFitter::Poly2;
-    } else if (bkgFuncConfig[iPt] == 3) {
-      bkgFunc[iPt] = HFInvMassFitter::Pow;
-    } else if (bkgFuncConfig[iPt] == 4) {
-      bkgFunc[iPt] = HFInvMassFitter::PowExpo;
-    } else if (bkgFuncConfig[iPt] == 5) {
-      bkgFunc[iPt] = HFInvMassFitter::Poly3;
-    } else if (bkgFuncConfig[iPt] == 6) {
-      bkgFunc[iPt] = HFInvMassFitter::NoBkg;
-    } else {
-      cerr << "ERROR: only Expo, Poly1, Poly2, Pow and PowEx background "
-              "functions supported! Exit"
-           << endl;
-      return -1;
+  auto checkVectorSize = [&](const auto& vec, const std::string& name = "", const bool isEmptyOk = false) {
+    if (vec.size() != static_cast<size_t>(nSliceVarBins)) {
+      if (isEmptyOk && vec.empty()) {
+        return;
+      }
+      throw std::runtime_error("ERROR: inconsistent vector size for " + name + "! Exit");
     }
+  };
 
-    if (sgnFuncConfig[iPt] == 0) {
-      sgnFunc[iPt] = HFInvMassFitter::SingleGaus;
-    } else if (sgnFuncConfig[iPt] == 1) {
-      sgnFunc[iPt] = HFInvMassFitter::DoubleGaus;
-    } else if (sgnFuncConfig[iPt] == 2) {
-      sgnFunc[iPt] = HFInvMassFitter::DoubleGausSigmaRatioPar;
-    } else {
-      cerr << "ERROR: only SingleGaus, DoubleGaus and DoubleGausSigmaRatioPar signal "
-              "functions supported! Exit"
-           << endl;
-      return -1;
+  checkVectorSize(inputHistoName, "inputHistoName", true);
+  checkVectorSize(promptHistoName, "promptHistoName", true);
+  checkVectorSize(fdHistoName, "fdHistoName", true);
+  checkVectorSize(reflHistoName, "reflHistoName", true);
+  checkVectorSize(promptSecPeakHistoName, "promptSecPeakHistoName", true);
+  checkVectorSize(fdSecPeakHistoName, "fdSecPeakHistoName", true);
+  checkVectorSize(sliceVarMin, "sliceVarMin");
+  checkVectorSize(sliceVarMax, "sliceVarMax");
+  checkVectorSize(massMin, "massMin");
+  checkVectorSize(massMax, "massMax");
+  checkVectorSize(fixMeanManual, "fixMeanManual", true);
+  checkVectorSize(fixSigmaManual, "fixSigmaManual", true);
+  checkVectorSize(fixSecondSigmaManual, "fixSecondSigmaManual", true);
+  checkVectorSize(fixFracDoubleGausManual, "fixFracDoubleGausManual", true);
+  checkVectorSize(nRebin, "nRebin");
+  checkVectorSize(bkgFunc, "bkgFunc");
+  checkVectorSize(sgnFunc, "sgnFunc");
+
+  for (int iSliceVar = 0; iSliceVar < nSliceVarBins; iSliceVar++) {
+    sliceVarLimits[iSliceVar] = sliceVarMin[iSliceVar];
+
+    if (bkgFunc[iSliceVar] < 0 || bkgFunc[iSliceVar] >= HFInvMassFitter::NTypesOfBkgPdf) {
+      throw std::runtime_error("ERROR: only Expo, Poly1, Poly2, Pow and PowEx background functions supported! Exit");
+    }
+    if (isMc && bkgFunc[iSliceVar] != HFInvMassFitter::NoBkg) {
+      throw std::runtime_error("ERROR: in MC mode the background function must be NoBkg! Exit");
+    }
+    if (sgnFunc[iSliceVar] < 0 || sgnFunc[iSliceVar] >= HFInvMassFitter::NTypesOfSgnPdf) {
+      throw std::runtime_error("ERROR: only SingleGaus, DoubleGaus and DoubleGausSigmaRatioPar signal functions supported! Exit");
     }
   }
+  sliceVarLimits[nSliceVarBins] = sliceVarMax[nSliceVarBins - 1];
 
-  TString massAxisTitle = "";
-  if (particleName == "Dplus") {
-    massAxisTitle = "#it{M}(K#pi#pi) (GeV/#it{c}^{2})";
-  } else if (particleName == "D0") {
-    massAxisTitle = "#it{M}(K#pi) (GeV/#it{c}^{2})";
-  } else if (particleName == "Ds") {
-    massAxisTitle = "#it{M}(KK#pi) (GeV/#it{c}^{2})";
-  } else if (particleName == "LcToPKPi") {
-    massAxisTitle = "#it{M}(pK#pi) (GeV/#it{c}^{2})";
-  } else if (particleName == "LcToPK0s") {
-    massAxisTitle = "#it{M}(pK^{0}_{s}) (GeV/#it{c}^{2})";
-  } else if (particleName == "Dstar") {
-    massAxisTitle = "#it{M}(pi^{+}) (GeV/#it{c}^{2})";
-  } else {
-    cerr << "ERROR: only Dplus, D0, Ds, LcToPKPi, LcToPK0s and Dstar particles supported! Exit" << endl;
-    return -1;
+  struct DecayInfo {
+    std::string decayProducts;
+    std::string pdgName;
+    std::string decayFormulaLhs;
+    std::string decayFormulaRhs;
+  };
+
+  std::map<std::string, DecayInfo> particles{
+    {"Dplus", {"K#pi#pi", "D+", "D^{+}", "K^{-}#pi^{+}#pi^{+}"}},
+    {"D0", {"K#pi", "D0", "D^{0}", "K^{-}#pi^{+}"}},
+    {"Ds", {"KK#pi", "D_s+", "D_{s}^{+}", "K^{-}K^{+}#pi^{+}"}},
+    {"LcToPKPi", {"pK#pi", "Lambda_c+", "#Lambda_{c}^{+}", "pK^{-}#pi^{+}"}},
+    {"LcToPK0s", {"pK^{0}_{s}", "Lambda_c+", "#Lambda_{c}^{+}", "pK^{0}_{s}"}},
+    {"Dstar", {"D^{0}pi^{+}", "D*+", "D^{*+}", "D^{0}#pi^{+}"}},
+    {"XicToXiPiPi", {"#Xi#pi#pi", "Xi_c+", "#Xi_{c}^{+}", "#Xi^{-}#pi^{+}#pi^{+}"}}};
+  if (particles.find(particleName.c_str()) == particles.end()) {
+    throw std::runtime_error("ERROR: only Dplus, D0, Ds, LcToPKPi, LcToPK0s, Dstar and XicToXiPiPi particles supported! Exit");
   }
+  const auto& particle = particles[particleName.c_str()];
+  const std::string massAxisTitle = "#it{M}(" + particle.decayProducts + ") (GeV/#it{c}^{2})";
+  const double massPDG = TDatabasePDG::Instance()->GetParticle(particle.pdgName.c_str())->Mass();
+  const std::vector<std::string> plotLabels = {(particle.decayFormulaLhs + " #rightarrow " + particle.decayFormulaRhs + " + c.c.").c_str(), collisionSystem};
 
   // load inv-mass histograms
-  auto inputFile = TFile::Open(inputFileName.Data());
-  if (!inputFile || !inputFile->IsOpen()) {
-    return -1;
-  }
+  auto* inputFile = openFileWithNullptrCheck(inputFileName);
 
-  TFile* inputFileRefl = NULL;
-  if (enableRefl) {
-    inputFileRefl = TFile::Open(reflFileName.Data());
-    if (!inputFileRefl || !inputFileRefl->IsOpen()) {
-      return -1;
-    }
-  }
+  TFile* inputFileRefl = enableRefl ? openFileWithNullptrCheck(reflFileName) : nullptr;
 
-  TH1F* hMassSgn[nPtBins];
-  TH1F* hMassRefl[nPtBins];
-  TH1F* hMass[nPtBins];
+  std::vector<TH1*> hMassSgn(nSliceVarBins);
+  std::vector<TH1*> hMassRefl(nSliceVarBins);
+  std::vector<TH1*> hMass(nSliceVarBins);
 
-  for (unsigned int iPt = 0; iPt < nPtBins; iPt++) {
+  for (int iSliceVar = 0; iSliceVar < nSliceVarBins; iSliceVar++) {
     if (!isMc) {
-      hMass[iPt] = static_cast<TH1F*>(inputFile->Get(inputHistoName[iPt].data()));
+      hMass[iSliceVar] = getObjectWithNullPtrCheck<TH1>(inputFile, inputHistoName[iSliceVar]);
       if (enableRefl) {
-        hMassRefl[iPt] = static_cast<TH1F*>(inputFileRefl->Get(reflHistoName[iPt].data()));
-        hMassSgn[iPt] = static_cast<TH1F*>(inputFileRefl->Get(fdHistoName[iPt].data()));
-        hMassSgn[iPt]->Add(static_cast<TH1F*>(inputFileRefl->Get(promptHistoName[iPt].data())));
-        if (!hMassRefl[iPt]) {
-          cerr << "ERROR: MC reflection histogram not found! Exit!" << endl;
-          return -1;
-        }
-        if (!hMassSgn[iPt]) {
-          cerr << "ERROR: MC prompt or FD histogram not found! Exit!" << endl;
-          return -1;
-        }
+        hMassRefl[iSliceVar] = getObjectWithNullPtrCheck<TH1>(inputFileRefl, reflHistoName[iSliceVar]);
+        hMassSgn[iSliceVar] = getObjectWithNullPtrCheck<TH1>(inputFileRefl, fdHistoName[iSliceVar]);
+        hMassSgn[iSliceVar]->Add(getObjectWithNullPtrCheck<TH1>(inputFileRefl, promptHistoName[iSliceVar]));
       }
     } else {
-      hMass[iPt] = static_cast<TH1F*>(inputFile->Get(promptHistoName[iPt].data()));
-      hMass[iPt]->Add(static_cast<TH1F*>(inputFile->Get(fdHistoName[iPt].data())));
+      hMass[iSliceVar] = getObjectWithNullPtrCheck<TH1>(inputFile, promptHistoName[iSliceVar]);
+      hMass[iSliceVar]->Add(getObjectWithNullPtrCheck<TH1>(inputFile, fdHistoName[iSliceVar]));
       if (includeSecPeak) {
-        hMass[iPt]->Add(static_cast<TH1F*>(inputFile->Get(promptSecPeakHistoName[iPt].data())));
-        hMass[iPt]->Add(static_cast<TH1F*>(inputFile->Get(fdSecPeakHistoName[iPt].data())));
+        hMass[iSliceVar]->Add(getObjectWithNullPtrCheck<TH1>(inputFile, promptSecPeakHistoName[iSliceVar]));
+        hMass[iSliceVar]->Add(getObjectWithNullPtrCheck<TH1>(inputFile, fdSecPeakHistoName[iSliceVar]));
       }
     }
-    if (!hMass[iPt]) {
-      cerr << "ERROR: input histogram for fit not found! Exit!" << endl;
-      return -1;
-    }
-    hMass[iPt]->SetDirectory(0);
+    hMass[iSliceVar]->SetDirectory(nullptr);
   }
   inputFile->Close();
+  if (enableRefl) {
+    inputFileRefl->Close();
+  }
 
   // define output histos
-  auto hRawYields = new TH1D("hRawYields", ";#it{p}_{T} (GeV/#it{c});raw yield",
-                             nPtBins, ptLimits);
-  auto hRawYieldsSigma = new TH1D(
-    "hRawYieldsSigma", ";#it{p}_{T} (GeV/#it{c});width (GeV/#it{c}^{2})",
-    nPtBins, ptLimits);
-  auto hRawYieldsSigmaRatio = new TH1D(
-    "hRawYieldsSigmaRatio",
-    ";#it{p}_{T} (GeV/#it{c});ratio #sigma_{1}/#sigma_{2}", nPtBins, ptLimits);
-  auto hRawYieldsSigma2 = new TH1D(
-    "hRawYieldsSigma2", ";#it{p}_{T} (GeV/#it{c});width (GeV/#it{c}^{2})",
-    nPtBins, ptLimits);
-  auto hRawYieldsMean = new TH1D(
-    "hRawYieldsMean", ";#it{p}_{T} (GeV/#it{c});mean (GeV/#it{c}^{2})",
-    nPtBins, ptLimits);
-  auto hRawYieldsFracGaus2 = new TH1D(
-    "hRawYieldsFracGaus2",
-    ";#it{p}_{T} (GeV/#it{c});second-gaussian fraction", nPtBins, ptLimits);
-  auto hRawYieldsSignificance = new TH1D(
-    "hRawYieldsSignificance",
-    ";#it{p}_{T} (GeV/#it{c});significance (3#sigma)", nPtBins, ptLimits);
-  auto hRawYieldsSgnOverBkg =
-    new TH1D("hRawYieldsSgnOverBkg", ";#it{p}_{T} (GeV/#it{c});S/B (3#sigma)",
-             nPtBins, ptLimits);
-  auto hRawYieldsSignal =
-    new TH1D("hRawYieldsSignal", ";#it{p}_{T} (GeV/#it{c});Signal (3#sigma)",
-             nPtBins, ptLimits);
-  auto hRawYieldsBkg =
-    new TH1D("hRawYieldsBkg", ";#it{p}_{T} (GeV/#it{c});Background (3#sigma)",
-             nPtBins, ptLimits);
-  auto hRawYieldsChiSquare =
-    new TH1D("hRawYieldsChiSquare",
-             ";#it{p}_{T} (GeV/#it{c});#chi^{2}/#it{ndf}", nPtBins, ptLimits);
-  auto hRawYieldsSecondPeak = new TH1D(
-    "hRawYieldsSecondPeak", ";#it{p}_{T} (GeV/#it{c});raw yield second peak",
-    nPtBins, ptLimits);
-  auto hRawYieldsMeanSecondPeak =
-    new TH1D("hRawYieldsMeanSecondPeak",
-             ";#it{p}_{T} (GeV/#it{c});mean second peak (GeV/#it{c}^{2})",
-             nPtBins, ptLimits);
-  auto hRawYieldsSigmaSecondPeak =
-    new TH1D("hRawYieldsSigmaSecondPeak",
-             ";#it{p}_{T} (GeV/#it{c});width second peak (GeV/#it{c}^{2})",
-             nPtBins, ptLimits);
-  auto hRawYieldsSignificanceSecondPeak =
-    new TH1D("hRawYieldsSignificanceSecondPeak",
-             ";#it{p}_{T} (GeV/#it{c});signficance second peak (3#sigma)",
-             nPtBins, ptLimits);
-  auto hRawYieldsSigmaRatioSecondFirstPeak =
-    new TH1D("hRawYieldsSigmaRatioSecondFirstPeak",
-             ";#it{p}_{T} (GeV/#it{c});width second peak / width first peak",
-             nPtBins, ptLimits);
-  auto hRawYieldsSoverBSecondPeak = new TH1D(
-    "hRawYieldsSoverBSecondPeak",
-    ";#it{p}_{T} (GeV/#it{c});S/B second peak (3#sigma)", nPtBins, ptLimits);
-  auto hRawYieldsSignalSecondPeak = new TH1D(
-    "hRawYieldsSignalSecondPeak",
-    ";#it{p}_{T} (GeV/#it{c});Signal second peak (3#sigma)", nPtBins, ptLimits);
-  auto hRawYieldsBkgSecondPeak =
-    new TH1D("hRawYieldsBkgSecondPeak",
-             ";#it{p}_{T} (GeV/#it{c});Background second peak (3#sigma)",
-             nPtBins, ptLimits);
-  auto hReflectionOverSignal =
-    new TH1D("hReflectionOverSignal", ";#it{p}_{T} (GeV/#it{c});Refl/Signal",
-             nPtBins, ptLimits);
+  auto* hRawYieldsSignal = new TH1D("hRawYieldsSignal", ";" + sliceVarName + "(" + sliceVarUnit + ");raw yield", nSliceVarBins, sliceVarLimits.data());
+  auto* hRawYieldsSignalCounted = new TH1D("hRawYieldsSignalCounted", ";" + sliceVarName + "(" + sliceVarUnit + ");raw yield via bin count", nSliceVarBins, sliceVarLimits.data());
+  auto* hRawYieldsBkg = new TH1D("hRawYieldsBkg", ";" + sliceVarName + "(" + sliceVarUnit + ");Background (3#sigma)", nSliceVarBins, sliceVarLimits.data());
+  auto* hRawYieldsSgnOverBkg = new TH1D("hRawYieldsSgnOverBkg", ";" + sliceVarName + "(" + sliceVarUnit + ");S/B (3#sigma)", nSliceVarBins, sliceVarLimits.data());
+  auto* hRawYieldsSignificance = new TH1D("hRawYieldsSignificance", ";" + sliceVarName + "(" + sliceVarUnit + ");significance (3#sigma)", nSliceVarBins, sliceVarLimits.data());
+  auto* hRawYieldsChiSquareBkg = new TH1D("hRawYieldsChiSquareBkg", ";" + sliceVarName + "(" + sliceVarUnit + ");#chi^{2}/#it{ndf}", nSliceVarBins, sliceVarLimits.data());
+  auto* hRawYieldsChiSquareTotal = new TH1D("hRawYieldsChiSquareTotal", ";" + sliceVarName + "(" + sliceVarUnit + ");#chi^{2}/#it{ndf}", nSliceVarBins, sliceVarLimits.data());
+  auto* hReflectionOverSignal = new TH1D("hReflectionOverSignal", ";" + sliceVarName + "(" + sliceVarUnit + ");Refl/Signal", nSliceVarBins, sliceVarLimits.data());
+  auto* hRawYieldsMean = new TH1D("hRawYieldsMean", ";" + sliceVarName + "(" + sliceVarUnit + ");mean (GeV/#it{c}^{2})", nSliceVarBins, sliceVarLimits.data());
+  auto* hRawYieldsSigma = new TH1D("hRawYieldsSigma", ";" + sliceVarName + "(" + sliceVarUnit + ");width (GeV/#it{c}^{2})", nSliceVarBins, sliceVarLimits.data());
+  auto* hRawYieldsSecSigma = new TH1D("hRawYieldsSecSigma", ";" + sliceVarName + "(" + sliceVarUnit + ");width (GeV/#it{c}^{2})", nSliceVarBins, sliceVarLimits.data());
+  auto* hRawYieldsFracDoubleGaus = new TH1D("hRawYieldsFracDoubleGaus", ";" + sliceVarName + "(" + sliceVarUnit + ");fraction of double gaussian", nSliceVarBins, sliceVarLimits.data());
 
-  const Int_t nConfigsToSave = 6;
-  auto hFitConfig = new TH2F("hfitConfig", "Fit Configurations", nConfigsToSave, 0, 6, nPtBins, ptLimits);
-  const char* hFitConfigXLabel[nConfigsToSave] = {"mass min", "mass max", "rebin num", "fix sigma", "bkg func", "sgn func"};
-  hFitConfig->SetStats(0);
+  enum {
+    ConfigMassMin = 1,
+    ConfigMassMax,
+    ConfigNRebin,
+    ConfigFixSigma,
+    ConfigBkgFunc,
+    ConfigSgnFunc,
+    NConfigsToSave
+  };
+  auto* hFitConfig = new TH2F("hfitConfig", "Fit Configurations", NConfigsToSave - 1, 0, NConfigsToSave - 1, nSliceVarBins, sliceVarLimits.data());
+  const char* hFitConfigXLabel[NConfigsToSave - 1] = {"mass min", "mass max", "rebin num", "fix sigma", "bkg func", "sgn func"};
+  hFitConfig->SetStats(false);
+  for (int i = 0; i < NConfigsToSave - 1; i++) {
+    hFitConfig->GetXaxis()->SetBinLabel(i + 1, hFitConfigXLabel[i]);
+  }
   hFitConfig->LabelsDeflate("X");
   hFitConfig->LabelsDeflate("Y");
   hFitConfig->LabelsOption("v");
-  for (int i = 0; i < nConfigsToSave; i++) {
-    hFitConfig->GetXaxis()->SetBinLabel(i + 1, hFitConfigXLabel[i]);
-  }
 
-  setHistoStyle(hRawYields);
-  setHistoStyle(hRawYieldsSigma);
-  setHistoStyle(hRawYieldsSigma2);
-  setHistoStyle(hRawYieldsMean);
-  setHistoStyle(hRawYieldsFracGaus2);
-  setHistoStyle(hRawYieldsSignificance);
-  setHistoStyle(hRawYieldsSgnOverBkg);
   setHistoStyle(hRawYieldsSignal);
+  setHistoStyle(hRawYieldsSignalCounted);
   setHistoStyle(hRawYieldsBkg);
-  setHistoStyle(hRawYieldsChiSquare);
-  setHistoStyle(hRawYieldsSecondPeak, kRed + 1);
-  setHistoStyle(hRawYieldsMeanSecondPeak, kRed + 1);
-  setHistoStyle(hRawYieldsSigmaSecondPeak, kRed + 1);
-  setHistoStyle(hRawYieldsSignificanceSecondPeak, kRed + 1);
-  setHistoStyle(hRawYieldsSigmaRatioSecondFirstPeak, kRed + 1);
-  setHistoStyle(hRawYieldsSoverBSecondPeak, kRed + 1);
-  setHistoStyle(hRawYieldsSignalSecondPeak, kRed + 1);
-  setHistoStyle(hRawYieldsBkgSecondPeak, kRed + 1);
+  setHistoStyle(hRawYieldsSgnOverBkg);
+  setHistoStyle(hRawYieldsSignificance);
+  setHistoStyle(hRawYieldsChiSquareBkg);
+  setHistoStyle(hRawYieldsChiSquareTotal);
   setHistoStyle(hReflectionOverSignal, kRed + 1);
+  setHistoStyle(hRawYieldsMean);
+  setHistoStyle(hRawYieldsSigma);
+  setHistoStyle(hRawYieldsSecSigma);
+  setHistoStyle(hRawYieldsFracDoubleGaus);
 
-  TH1D* hSigmaToFix = NULL;
-  if (fixSigma) {
-    if (fixSigmaManual.empty()) {
-      auto inputFileSigma = TFile::Open(sigmaFile.data());
-      if (!inputFileSigma) {
-        return -2;
+  auto getHistToFix = [&nSliceVarBins](bool const& isFix, std::vector<double> const& fixManual, std::string const& fixFileName, std::string const& var) -> TH1* {
+    TH1* histToFix = nullptr;
+    if (isFix) {
+      if (fixManual.empty()) {
+        auto* fixInputFile = openFileWithNullptrCheck(fixFileName);
+        const std::string histName = "hRawYields" + var;
+        histToFix = getObjectWithNullPtrCheck<TH1>(fixInputFile, histName);
+        histToFix->SetDirectory(nullptr);
+        if (histToFix->GetNbinsX() != nSliceVarBins) {
+          throw std::runtime_error("Different number of bins for this analysis and histo for fixed " + var);
+        }
+        fixInputFile->Close();
       }
-      hSigmaToFix = static_cast<TH1D*>(inputFileSigma->Get("hRawYieldsSigma"));
-      hSigmaToFix->SetDirectory(0);
-      if (static_cast<unsigned int>(hSigmaToFix->GetNbinsX()) != nPtBins) {
-        cout << "WARNING: Different number of bins for this analysis and histo for fix sigma!" << endl;
-      }
-      inputFileSigma->Close();
     }
-  }
+    return histToFix;
+  };
 
-  TH1D* hMeanToFix = NULL;
-  if (fixMean) {
-    auto inputFileMean = TFile::Open(meanFile.data());
-    if (!inputFileMean) {
-      return -3;
-    }
-    hMeanToFix = static_cast<TH1D*>(inputFileMean->Get("hRawYieldsMean"));
-    hMeanToFix->SetDirectory(0);
-    if (static_cast<unsigned int>(hMeanToFix->GetNbinsX()) != nPtBins) {
-      cout << "WARNING: Different number of bins for this analysis and histo for fix mean" << endl;
-    }
-    inputFileMean->Close();
-  }
+  TH1* hSigmaToFix = getHistToFix(fixSigma, fixSigmaManual, sigmaFile, "Sigma");
+  TH1* hMeanToFix = getHistToFix(fixMean, fixMeanManual, meanFile, "Mean");
+  TH1* hSecondSigmaToFix = getHistToFix(fixSecondSigma, fixSecondSigmaManual, secondSigmaFile, "SecSigma");
+  TH1* hFracDoubleGausToFix = getHistToFix(fixFracDoubleGaus, fixFracDoubleGausManual, fracDoubleGausFile, "FracDoubleGaus");
 
-  // fit histograms
-
-  TH1F* hMassForFit[nPtBins];
-  TH1F* hMassForRefl[nPtBins];
-  TH1F* hMassForSgn[nPtBins];
-
-  Int_t canvasSize[2] = {1920, 1080};
-  if (nPtBins == 1) {
+  int canvasSize[2] = {1920, 1080};
+  if (nSliceVarBins == 1) {
     canvasSize[0] = 500;
     canvasSize[1] = 500;
   }
 
-  Int_t nCanvasesMax = 20; // do not put more than 20 bins per canvas to make them visible
-  const Int_t nCanvases = ceil((float)nPtBins / nCanvasesMax);
-  TCanvas *canvasMass[nCanvases], *canvasResiduals[nCanvases], *canvasRefl[nCanvases];
+  int constexpr NCanvasesMax = 20; // do not put more than 20 bins per canvas to make them visible
+  const int nCanvases = std::ceil(static_cast<float>(nSliceVarBins) / NCanvasesMax);
+  std::vector<TCanvas*> canvasMass(nCanvases);
+  std::vector<TCanvas*> canvasResiduals(nCanvases);
+  std::vector<TCanvas*> canvasRatio(nCanvases);
+  std::vector<TCanvas*> canvasRefl(nCanvases);
   for (int iCanvas = 0; iCanvas < nCanvases; iCanvas++) {
-    int nPads = (nCanvases == 1) ? nPtBins : nCanvasesMax;
-    canvasMass[iCanvas] = new TCanvas(Form("canvasMass%d", iCanvas), Form("canvasMass%d", iCanvas),
-                                      canvasSize[0], canvasSize[1]);
+    const int nPads = (nCanvases == 1) ? nSliceVarBins : NCanvasesMax;
+    canvasMass[iCanvas] = new TCanvas(Form("canvasMass%d", iCanvas), Form("canvasMass%d", iCanvas), canvasSize[0], canvasSize[1]);
     divideCanvas(canvasMass[iCanvas], nPads);
 
-    canvasResiduals[iCanvas] =
-      new TCanvas(Form("canvasResiduals%d", iCanvas), Form("canvasResiduals%d", iCanvas), canvasSize[0], canvasSize[1]);
+    canvasResiduals[iCanvas] = new TCanvas(Form("canvasResiduals%d", iCanvas), Form("canvasResiduals%d", iCanvas), canvasSize[0], canvasSize[1]);
     divideCanvas(canvasResiduals[iCanvas], nPads);
-    canvasRefl[iCanvas] = new TCanvas(Form("canvasRefl%d", iCanvas), Form("canvasRefl%d", iCanvas),
-                                      canvasSize[0], canvasSize[1]);
-    divideCanvas(canvasRefl[iCanvas], nPads);
-  }
 
-  for (unsigned int iPt = 0; iPt < nPtBins; iPt++) {
-    Int_t iCanvas = floor((float)iPt / nCanvasesMax);
-
-    hMassForFit[iPt] = reinterpret_cast<TH1F*>(hMass[iPt]->Rebin(nRebin[iPt]));
-    TString ptTitle =
-      Form("%0.1f < #it{p}_{T} < %0.1f GeV/#it{c}", ptMin[iPt], ptMax[iPt]);
-    hMassForFit[iPt]->SetTitle(Form("%s;%s;Counts per %0.f MeV/#it{c}^{2}",
-                                    ptTitle.Data(), massAxisTitle.Data(),
-                                    hMassForFit[iPt]->GetBinWidth(1) * 1000));
-    hMassForFit[iPt]->SetName(Form("MassForFit%d", iPt));
+    canvasRatio[iCanvas] = new TCanvas(Form("canvasRatio%d", iCanvas), Form("canvasRatio%d", iCanvas), canvasSize[0], canvasSize[1]);
+    divideCanvas(canvasRatio[iCanvas], nPads);
 
     if (enableRefl) {
-      hMassForRefl[iPt] =
-        reinterpret_cast<TH1F*>(hMassRefl[iPt]->Rebin(nRebin[iPt]));
-      hMassForSgn[iPt] =
-        reinterpret_cast<TH1F*>(hMassSgn[iPt]->Rebin(nRebin[iPt]));
+      canvasRefl[iCanvas] = new TCanvas(Form("canvasRefl%d", iCanvas), Form("canvasRefl%d", iCanvas), canvasSize[0], canvasSize[1]);
+      divideCanvas(canvasRefl[iCanvas], nPads);
+    }
+  }
+
+  for (int iSliceVar = 0; iSliceVar < nSliceVarBins; iSliceVar++) {
+    const int iCanvas = std::floor(static_cast<float>(iSliceVar) / NCanvasesMax);
+
+    hMass[iSliceVar]->Rebin(nRebin[iSliceVar]);
+    TString const ptTitle =
+      Form("%0.2f < " + sliceVarName + " < %0.2f " + sliceVarUnit, sliceVarMin[iSliceVar], sliceVarMax[iSliceVar]);
+    hMass[iSliceVar]->SetTitle(Form("%s;%s;Counts per %0.1f MeV/#it{c}^{2}",
+                                    ptTitle.Data(), massAxisTitle.c_str(),
+                                    hMass[iSliceVar]->GetBinWidth(1) * 1000));
+    hMass[iSliceVar]->SetName(Form("MassForFit%d", iSliceVar));
+
+    if (enableRefl) {
+      hMassRefl[iSliceVar]->Rebin(nRebin[iSliceVar]);
+      hMassSgn[iSliceVar]->Rebin(nRebin[iSliceVar]);
     }
 
-    Double_t reflOverSgn = 0;
-    double markerSize = 1.;
-    if (nPtBins > 15) {
-      markerSize = 0.5;
-    }
+    double reflOverSgn = 0;
 
-    if (isMc) {
-      HFInvMassFitter* massFitter;
-      massFitter = new HFInvMassFitter(hMassForFit[iPt], massMin[iPt], massMax[iPt], HFInvMassFitter::NoBkg, sgnFunc[iPt]);
-      massFitter->doFit(false);
-
-      if (nPtBins > 1) {
-        canvasMass[iCanvas]->cd(iPt - nCanvasesMax * iCanvas + 1);
-      } else {
-        canvasMass[iCanvas]->cd();
-      }
-
-      massFitter->drawFit(gPad);
-
-      Double_t rawYield = massFitter->getRawYield();
-      Double_t rawYieldErr = massFitter->getRawYieldError();
-
-      Double_t sigma = massFitter->getSigma();
-      Double_t sigmaErr = massFitter->getSigmaUncertainty();
-      Double_t mean = massFitter->getMean();
-      Double_t meanErr = massFitter->getMeanUncertainty();
-      Double_t reducedChiSquare = massFitter->getChiSquareOverNDF();
-
-      hRawYields->SetBinContent(iPt + 1, rawYield);
-      hRawYields->SetBinError(iPt + 1, rawYieldErr);
-      hRawYieldsSigma->SetBinContent(iPt + 1, sigma);
-      hRawYieldsSigma->SetBinError(iPt + 1, sigmaErr);
-      hRawYieldsMean->SetBinContent(iPt + 1, mean);
-      hRawYieldsMean->SetBinError(iPt + 1, meanErr);
-      hRawYieldsChiSquare->SetBinContent(iPt + 1, reducedChiSquare);
-      hRawYieldsChiSquare->SetBinError(iPt + 1, 0.);
+    HFInvMassFitter* massFitter = new HFInvMassFitter(hMass[iSliceVar], massMin[iSliceVar], massMax[iSliceVar], bkgFunc[iSliceVar], sgnFunc[iSliceVar]);
+    massFitter->setDrawBgPrefit(drawBgPrefit);
+    massFitter->setHighlightPeakRegion(highlightPeakRegion);
+    massFitter->setInitialGaussianMean(massPDG);
+    massFitter->setParticlePdgMass(massPDG);
+    massFitter->setBoundGaussianMean(massPDG, 0.8 * massPDG, 1.2 * massPDG);
+    if (useLikelihood) {
+      massFitter->setUseLikelihoodFit();
     } else {
-      HFInvMassFitter* massFitter;
-      massFitter = new HFInvMassFitter(hMassForFit[iPt], massMin[iPt], massMax[iPt],
-                                       bkgFunc[iPt], sgnFunc[iPt]);
-      if (useLikelihood) {
-        massFitter->setUseLikelihoodFit();
-      }
-      if (fixMean) {
-        massFitter->setFixGaussianMean(hMeanToFix->GetBinContent(iPt + 1));
-      }
-      if (fixSigma) {
-        if (fixSigmaManual.empty()) {
-          massFitter->setFixGaussianSigma(hSigmaToFix->GetBinContent(iPt + 1));
-          cout << "*****************************"
-               << "\n"
-               << "FIXED SIGMA: " << hSigmaToFix->GetBinContent(iPt + 1) << "\n"
-               << "*****************************" << endl;
-        } else if (!fixSigmaManual.empty()) {
-          massFitter->setFixGaussianSigma(fixSigmaManual[iPt]);
-          cout << "*****************************"
-               << "\n"
-               << "FIXED SIGMA: " << fixSigmaManual[iPt] << "\n"
-               << "*****************************" << endl;
-        } else {
-          cout << "WARNING: impossible to fix sigma! Wrong fix sigma file or value!" << endl;
-        }
-      }
-
-      if (enableRefl) {
-        reflOverSgn = hMassForSgn[iPt]->Integral(hMassForSgn[iPt]->FindBin(massMin[iPt] * 1.0001), hMassForSgn[iPt]->FindBin(massMax[iPt] * 0.999));
-        reflOverSgn = hMassForRefl[iPt]->Integral(hMassForRefl[iPt]->FindBin(massMin[iPt] * 1.0001), hMassForRefl[iPt]->FindBin(massMax[iPt] * 0.999)) / reflOverSgn;
-        massFitter->setFixReflOverSgn(reflOverSgn);
-        massFitter->setTemplateReflections(hMassRefl[iPt], HFInvMassFitter::DoubleGaus);
-      }
-
-      massFitter->doFit(false);
-
-      double rawYield = massFitter->getRawYield();
-      double rawYieldErr = massFitter->getRawYieldError();
-      double sigma = massFitter->getSigma();
-      double sigmaErr = massFitter->getSigmaUncertainty();
-      double mean = massFitter->getMean();
-      double meanErr = massFitter->getMeanUncertainty();
-      double reducedChiSquare = massFitter->getChiSquareOverNDF();
-      double significance = massFitter->getSignificance();
-      double significanceErr = massFitter->getSignificanceError();
-      double bkg = massFitter->getBkgYield();
-      double bkgErr = massFitter->getBkgYieldError();
-
-      hRawYields->SetBinContent(iPt + 1, rawYield);
-      hRawYields->SetBinError(iPt + 1, rawYieldErr);
-      hRawYieldsSigma->SetBinContent(iPt + 1, sigma);
-      hRawYieldsSigma->SetBinError(iPt + 1, sigmaErr);
-      hRawYieldsMean->SetBinContent(iPt + 1, mean);
-      hRawYieldsMean->SetBinError(iPt + 1, meanErr);
-      hRawYieldsSignificance->SetBinContent(iPt + 1, significance);
-      hRawYieldsSignificance->SetBinError(iPt + 1, significanceErr);
-      hRawYieldsSgnOverBkg->SetBinContent(iPt + 1, rawYield / bkg);
-      hRawYieldsSgnOverBkg->SetBinError(iPt + 1, rawYield / bkg * std::sqrt(rawYieldErr / rawYield * rawYieldErr / rawYield + bkgErr / bkg * bkgErr / bkg));
-      hRawYieldsSignal->SetBinContent(iPt + 1, rawYield);
-      hRawYieldsSignal->SetBinError(iPt + 1, rawYieldErr);
-      hRawYieldsBkg->SetBinContent(iPt + 1, bkg);
-      hRawYieldsBkg->SetBinError(iPt + 1, bkgErr);
-      hRawYieldsChiSquare->SetBinContent(iPt + 1, reducedChiSquare);
-      hRawYieldsChiSquare->SetBinError(iPt + 1, 1.e-20);
-      if (enableRefl) {
-        hReflectionOverSignal->SetBinContent(iPt + 1, reflOverSgn);
-      }
-
-      if (enableRefl) {
-        if (nPtBins > 1) {
-          canvasRefl[iCanvas]->cd(iPt - nCanvasesMax * iCanvas + 1);
-        } else {
-          canvasRefl[iCanvas]->cd();
-        }
-        massFitter->drawReflection(gPad);
-        canvasRefl[iCanvas]->Modified();
-        canvasRefl[iCanvas]->Update();
-      }
-
-      if (nPtBins > 1) {
-        canvasMass[iCanvas]->cd(iPt - nCanvasesMax * iCanvas + 1);
-      } else {
-        canvasMass[iCanvas]->cd();
-      }
-      massFitter->drawFit(gPad);
-      canvasMass[iCanvas]->Modified();
-      canvasMass[iCanvas]->Update();
-
-      if (nPtBins > 1) {
-        canvasResiduals[iCanvas]->cd(iPt - nCanvasesMax * iCanvas + 1);
-      } else {
-        canvasResiduals[iCanvas]->cd();
-      }
-      massFitter->drawResidual(gPad);
-      canvasResiduals[iCanvas]->Modified();
-      canvasResiduals[iCanvas]->Update();
+      massFitter->setUseChi2Fit();
     }
 
-    hFitConfig->SetBinContent(1, iPt + 1, massMin[iPt]);
-    hFitConfig->SetBinContent(2, iPt + 1, massMax[iPt]);
-    hFitConfig->SetBinContent(3, iPt + 1, nRebin[iPt]);
+    auto setFixedValue = [&iSliceVar](bool const& isFix, std::vector<double> const& fixManual, const TH1* histToFix, std::function<void(double)> setFunc, std::string const& var) -> void {
+      if (isFix) {
+        if (fixManual.empty() && histToFix == nullptr) {
+          throw std::runtime_error("Histogram to fix " + var + " is null while isFix==true and fixManual is empty");
+        }
+        const auto valueToFix = fixManual.empty() ? histToFix->GetBinContent(iSliceVar + 1) : fixManual[iSliceVar];
+        setFunc(valueToFix);
+        printf("*****************************\n");
+        printf("FIXED %s: %f\n", var.data(), valueToFix);
+        printf("*****************************\n");
+      }
+    };
+
+    setFixedValue(fixMean, fixMeanManual, hMeanToFix, std::bind(&HFInvMassFitter::setFixGaussianMean, massFitter, std::placeholders::_1), "MEAN");
+    setFixedValue(fixSigma, fixSigmaManual, hSigmaToFix, std::bind(&HFInvMassFitter::setFixGaussianSigma, massFitter, std::placeholders::_1), "SIGMA");
+    setFixedValue(fixSecondSigma, fixSecondSigmaManual, hSecondSigmaToFix, std::bind(&HFInvMassFitter::setFixSecondGaussianSigma, massFitter, std::placeholders::_1), "SECOND SIGMA");
+    setFixedValue(fixFracDoubleGaus, fixFracDoubleGausManual, hFracDoubleGausToFix, std::bind(&HFInvMassFitter::setFixFrac2Gaus, massFitter, std::placeholders::_1), "FRAC DOUBLE GAUS");
+
+    if (!isMc && enableRefl) {
+      reflOverSgn = hMassSgn[iSliceVar]->Integral(hMassSgn[iSliceVar]->FindBin(massMin[iSliceVar] * 1.0001), hMassSgn[iSliceVar]->FindBin(massMax[iSliceVar] * 0.999));
+      reflOverSgn = hMassRefl[iSliceVar]->Integral(hMassRefl[iSliceVar]->FindBin(massMin[iSliceVar] * 1.0001), hMassRefl[iSliceVar]->FindBin(massMax[iSliceVar] * 0.999)) / reflOverSgn;
+      massFitter->setFixReflOverSgn(reflOverSgn);
+      massFitter->setTemplateReflections(hMassRefl[iSliceVar]);
+    }
+
+    massFitter->doFit();
+
+    auto drawOnCanvas = [&](std::vector<TCanvas*>& canvas, std::function<void()> drawer) {
+      if (nSliceVarBins > 1) {
+        canvas[iCanvas]->cd(iSliceVar - NCanvasesMax * iCanvas + 1);
+      } else {
+        canvas[iCanvas]->cd();
+      }
+      drawer();
+      canvas[iCanvas]->Modified();
+      canvas[iCanvas]->Update();
+    };
+
+    drawOnCanvas(canvasMass, [&]() { massFitter->drawFit(gPad, plotLabels, writeSignalPar); });
+    drawOnCanvas(canvasRatio, [&]() { massFitter->drawRatio(gPad); });
+    if (bkgFunc[iSliceVar] != HFInvMassFitter::NoBkg) {
+      drawOnCanvas(canvasResiduals, [&]() { massFitter->drawResidual(gPad); });
+    }
+    if (enableRefl) {
+      drawOnCanvas(canvasRefl, [&]() { massFitter->drawReflection(gPad); });
+    }
+
+    const double rawYield = massFitter->getRawYield();
+    const double rawYieldErr = massFitter->getRawYieldError();
+    const double rawYieldCounted = massFitter->getRawYieldCounted();
+    const double rawYieldCountedErr = massFitter->getRawYieldCountedError();
+    const double bkg = massFitter->getBkgYield();
+    const double bkgErr = massFitter->getBkgYieldError();
+    const double significance = massFitter->getSignificance();
+    const double significanceErr = massFitter->getSignificanceError();
+    const double reducedChiSquareBkg = massFitter->getChiSquareOverNDFBkg();
+    const double reducedChiSquareTotal = massFitter->getChiSquareOverNDFTotal();
+    const double mean = massFitter->getMean();
+    const double meanErr = massFitter->getMeanUncertainty();
+    const double sigma = massFitter->getSigma();
+    const double sigmaErr = massFitter->getSigmaUncertainty();
+
+    hRawYieldsSignal->SetBinContent(iSliceVar + 1, rawYield);
+    hRawYieldsSignal->SetBinError(iSliceVar + 1, rawYieldErr);
+    hRawYieldsSignalCounted->SetBinContent(iSliceVar + 1, rawYieldCounted);
+    hRawYieldsSignalCounted->SetBinError(iSliceVar + 1, rawYieldCountedErr);
+    hRawYieldsBkg->SetBinContent(iSliceVar + 1, bkg);
+    hRawYieldsBkg->SetBinError(iSliceVar + 1, bkgErr);
+    hRawYieldsSgnOverBkg->SetBinContent(iSliceVar + 1, rawYield / bkg);
+    hRawYieldsSgnOverBkg->SetBinError(iSliceVar + 1, rawYield / bkg * std::sqrt(rawYieldErr / rawYield * rawYieldErr / rawYield + bkgErr / bkg * bkgErr / bkg));
+    hRawYieldsSignificance->SetBinContent(iSliceVar + 1, significance);
+    hRawYieldsSignificance->SetBinError(iSliceVar + 1, significanceErr);
+    hRawYieldsChiSquareBkg->SetBinContent(iSliceVar + 1, reducedChiSquareBkg);
+    hRawYieldsChiSquareBkg->SetBinError(iSliceVar + 1, 1.e-20);
+    hRawYieldsChiSquareTotal->SetBinContent(iSliceVar + 1, reducedChiSquareTotal);
+    hRawYieldsChiSquareTotal->SetBinError(iSliceVar + 1, 1.e-20);
+    hRawYieldsMean->SetBinContent(iSliceVar + 1, mean);
+    hRawYieldsMean->SetBinError(iSliceVar + 1, meanErr);
+    hRawYieldsSigma->SetBinContent(iSliceVar + 1, sigma);
+    hRawYieldsSigma->SetBinError(iSliceVar + 1, sigmaErr);
+    hReflectionOverSignal->SetBinContent(iSliceVar + 1, reflOverSgn);
+
+    if (sgnFunc[iSliceVar] != HFInvMassFitter::SingleGaus) { // TODO foresee DSCB and Voigt cases
+      const double secSigma = massFitter->getSecSigma();
+      const double secSigmaErr = massFitter->getSecSigmaUncertainty();
+      hRawYieldsSecSigma->SetBinContent(iSliceVar + 1, secSigma);
+      hRawYieldsSecSigma->SetBinError(iSliceVar + 1, secSigmaErr);
+    }
+    if (sgnFunc[iSliceVar] == HFInvMassFitter::DoubleGaus || sgnFunc[iSliceVar] == HFInvMassFitter::DoubleGausSigmaRatioPar) {
+      const double fracDoubleGaus = massFitter->getFracDoubleGaus();
+      const double fracDoubleGausErr = massFitter->getFracDoubleGausUncertainty();
+      hRawYieldsFracDoubleGaus->SetBinContent(iSliceVar + 1, fracDoubleGaus);
+      hRawYieldsFracDoubleGaus->SetBinError(iSliceVar + 1, fracDoubleGausErr);
+    }
+
+    hFitConfig->SetBinContent(ConfigMassMin, iSliceVar + 1, massMin[iSliceVar]);
+    hFitConfig->SetBinContent(ConfigMassMax, iSliceVar + 1, massMax[iSliceVar]);
+    hFitConfig->SetBinContent(ConfigNRebin, iSliceVar + 1, nRebin[iSliceVar]);
     if (fixSigma) {
-      if (fixSigmaManual.empty()) {
-        hFitConfig->SetBinContent(4, iPt + 1, hSigmaToFix->GetBinContent(iPt + 1));
-      } else {
-        hFitConfig->SetBinContent(4, iPt + 1, fixSigmaManual[iPt]);
-      }
+      const auto valueToFix = fixSigmaManual.empty() ? hSigmaToFix->GetBinContent(iSliceVar + 1) : fixSigmaManual[iSliceVar];
+      hFitConfig->SetBinContent(ConfigFixSigma, iSliceVar + 1, valueToFix);
     }
-    hFitConfig->SetBinContent(5, iPt + 1, bkgFuncConfig[iPt]);
-    hFitConfig->SetBinContent(6, iPt + 1, sgnFuncConfig[iPt]);
+    hFitConfig->SetBinContent(ConfigBkgFunc, iSliceVar + 1, bkgFunc[iSliceVar]);
+    hFitConfig->SetBinContent(ConfigSgnFunc, iSliceVar + 1, sgnFunc[iSliceVar]);
   }
 
   // save output histograms
@@ -601,31 +494,30 @@ int runMassFitter(TString configFileName)
     canvasMass[iCanvas]->Write();
     if (!isMc) {
       canvasResiduals[iCanvas]->Write();
-      canvasRefl[iCanvas]->Write();
+      canvasRatio[iCanvas]->Write();
+      if (enableRefl) {
+        canvasRefl[iCanvas]->Write();
+      }
     }
   }
 
-  for (unsigned int iPt = 0; iPt < nPtBins; iPt++) {
-    hMass[iPt]->Write();
+  for (int iSliceVar = 0; iSliceVar < nSliceVarBins; iSliceVar++) {
+    hMass[iSliceVar]->Write();
   }
-  hRawYields->Write();
-  hRawYieldsSigma->Write();
-  hRawYieldsMean->Write();
-  hRawYieldsSignificance->Write();
-  hRawYieldsSgnOverBkg->Write();
   hRawYieldsSignal->Write();
+  hRawYieldsSignalCounted->Write();
   hRawYieldsBkg->Write();
-  hRawYieldsChiSquare->Write();
-  hRawYieldsSigma2->Write();
-  hRawYieldsFracGaus2->Write();
-  hRawYieldsSecondPeak->Write();
-  hRawYieldsMeanSecondPeak->Write();
-  hRawYieldsSigmaSecondPeak->Write();
-  hRawYieldsSignificanceSecondPeak->Write();
-  hRawYieldsSigmaRatioSecondFirstPeak->Write();
-  hRawYieldsSoverBSecondPeak->Write();
-  hRawYieldsSignalSecondPeak->Write();
-  hRawYieldsBkgSecondPeak->Write();
+  hRawYieldsSgnOverBkg->Write();
+  hRawYieldsSignificance->Write();
+  hRawYieldsChiSquareBkg->Write();
+  hRawYieldsChiSquareTotal->Write();
+  hRawYieldsMean->Write();
+  hRawYieldsSigma->Write();
+  hRawYieldsSecSigma->Write();
+  hRawYieldsFracDoubleGaus->Write();
+  if (enableRefl) {
+    hReflectionOverSignal->Write();
+  }
   hFitConfig->Write();
 
   outputFile.Close();
@@ -633,30 +525,23 @@ int runMassFitter(TString configFileName)
   outputFileName.ReplaceAll(".root", ".pdf");
   TString outputFileNameResidual = outputFileName;
   outputFileNameResidual.ReplaceAll(".pdf", "_Residuals.pdf");
+  TString outputFileRatio = outputFileName;
+  outputFileRatio.ReplaceAll(".pdf", "_Ratio.pdf");
   for (int iCanvas = 0; iCanvas < nCanvases; iCanvas++) {
-    if (iCanvas == 0 && nCanvases > 1) {
-      canvasMass[iCanvas]->SaveAs(Form("%s[", outputFileName.Data()));
-    }
-    canvasMass[iCanvas]->SaveAs(outputFileName.Data());
-    if (iCanvas == nCanvases - 1 && nCanvases > 1) {
-      canvasMass[iCanvas]->SaveAs(Form("%s]", outputFileName.Data()));
-    }
+    const std::string printingBracket = nCanvases == 1 ? "" : iCanvas == 0             ? "("
+                                                            : iCanvas == nCanvases - 1 ? ")"
+                                                                                       : "";
+    canvasMass[iCanvas]->Print(Form("%s%s", outputFileName.Data(), printingBracket.c_str()), "pdf");
+    canvasRatio[iCanvas]->Print(Form("%s%s", outputFileRatio.Data(), printingBracket.c_str()), "pdf");
     if (!isMc) {
-      if (iCanvas == 0 && nCanvases > 1) {
-        canvasResiduals[iCanvas]->SaveAs(Form("%s[", outputFileNameResidual.Data()));
-      }
-      canvasResiduals[iCanvas]->SaveAs(outputFileNameResidual.Data());
-      if (iCanvas == nCanvases - 1 && nCanvases > 1) {
-        canvasResiduals[iCanvas]->SaveAs(Form("%s]", outputFileNameResidual.Data()));
-      }
+      canvasResiduals[iCanvas]->Print(Form("%s%s", outputFileNameResidual.Data(), printingBracket.c_str()), "pdf");
     }
   }
-  return 0;
 }
 
-void setHistoStyle(TH1* histo, int color, double markerSize)
+void setHistoStyle(TH1* histo, Color_t color, Size_t markerSize)
 {
-  histo->SetStats(kFALSE);
+  histo->SetStats(false);
   histo->SetMarkerSize(markerSize);
   histo->SetMarkerStyle(20);
   histo->SetLineWidth(2);
@@ -664,33 +549,97 @@ void setHistoStyle(TH1* histo, int color, double markerSize)
   histo->SetLineColor(color);
 }
 
-void divideCanvas(TCanvas* canvas, int nPtBins)
+void divideCanvas(TCanvas* canvas, int nSliceVarBins)
 {
-  if (nPtBins < 2) {
-    canvas->cd();
-  } else if (nPtBins == 2 || nPtBins == 3) {
-    canvas->Divide(nPtBins, 1);
-  } else if (nPtBins == 4 || nPtBins == 6 || nPtBins == 8) {
-    canvas->Divide(nPtBins / 2, 2);
-  } else if (nPtBins == 5 || nPtBins == 7) {
-    canvas->Divide((nPtBins + 1) / 2, 2);
-  } else if (nPtBins == 9 || nPtBins == 12 || nPtBins == 15) {
-    canvas->Divide(nPtBins / 3, 3);
-  } else if (nPtBins == 10 || nPtBins == 11) {
-    canvas->Divide(4, 3);
-  } else if (nPtBins == 13 || nPtBins == 14) {
-    canvas->Divide(5, 3);
-  } else if (nPtBins > 15 && nPtBins <= 20 && nPtBins % 4 == 0) {
-    canvas->Divide(nPtBins / 4, 4);
-  } else if (nPtBins > 15 && nPtBins <= 20 && nPtBins % 4 != 0) {
-    canvas->Divide(5, 4);
-  } else if (nPtBins == 21) {
-    canvas->Divide(7, 3);
-  } else if (nPtBins > 21 && nPtBins <= 25) {
-    canvas->Divide(5, 5);
-  } else if (nPtBins > 25 && nPtBins % 2 == 0) {
-    canvas->Divide(nPtBins / 2, 2);
-  } else {
-    canvas->Divide((nPtBins + 1) / 2, 2);
+  int nCols = std::ceil(std::sqrt(nSliceVarBins));
+  int nRows = std::ceil(static_cast<double>(nSliceVarBins) / nCols);
+  canvas->Divide(nCols, nRows);
+}
+
+TFile* openFileWithNullptrCheck(const std::string& fileName, const std::string& option)
+{
+  TFile* file = TFile::Open(fileName.c_str(), option.c_str());
+  if (file == nullptr || file->IsZombie()) {
+    throw std::runtime_error("openFileWithNullptrCheck(): Cannot open file " + fileName);
   }
+  return file;
+}
+
+template <typename T>
+T* getObjectWithNullPtrCheck(TFile* fileIn, const std::string& objectName)
+{
+  T* ptr = fileIn->Get<T>(objectName.c_str());
+  if (ptr == nullptr) {
+    throw std::runtime_error("getObjectWithNullptrCheck() - object " + objectName + " in file " + fileIn->GetName() + " is missing");
+  }
+  return ptr;
+}
+
+template <typename>
+constexpr bool AlwaysFalse = false;
+
+template <typename T>
+T getJsonValue(const Value& value)
+{
+  if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
+    return value.GetString();
+  } else if constexpr (std::is_same_v<std::decay_t<T>, bool>) {
+    return value.GetBool();
+  } else if constexpr (std::is_same_v<std::decay_t<T>, int>) {
+    return value.GetInt();
+  } else if constexpr (std::is_same_v<std::decay_t<T>, double>) {
+    return value.GetDouble();
+  } else {
+    static_assert(AlwaysFalse<T>, "getJsonValue(): unsupported type!");
+    return T();
+  }
+}
+
+template <typename T>
+T readJsonField(const Document& config, const std::string& fieldName, const T& defaultValue)
+{
+  if (!config.HasMember(fieldName.c_str())) {
+    return defaultValue;
+  }
+  const auto& value = config[fieldName.c_str()];
+  return getJsonValue<T>(value);
+}
+
+template <typename T>
+T readJsonField(const Document& config, const std::string& fieldName)
+{
+  if (!config.HasMember(fieldName.c_str())) {
+    throw std::runtime_error("readJsonField(): missing field " + fieldName);
+  }
+  return readJsonField<T>(config, fieldName, T());
+}
+
+template <typename T>
+void readJsonVector(std::vector<T>& vec, const Document& config, const std::string& fieldName, const bool isRequired)
+{
+  if (!vec.empty()) {
+    throw std::runtime_error("readJsonVector(): vector is not empty!");
+  }
+  if (config.HasMember(fieldName.c_str())) {
+    const Value& jsonArray = config[fieldName.c_str()];
+    for (auto it = jsonArray.Begin(); it != jsonArray.End(); it++) {
+      vec.push_back(getJsonValue<T>(*it));
+    }
+  } else if (isRequired) {
+    throw std::runtime_error("readJsonVector(): missing required field " + fieldName);
+  }
+}
+
+int main(int argc, const char* argv[])
+{
+  if (argc == 1) {
+    printf("Not enough arguments. Please use\n./runMassFitter configFileName\n");
+    return 1;
+  }
+
+  const std::string configFileName = argv[1];
+
+  runMassFitter(configFileName);
+
+  return 0;
 }

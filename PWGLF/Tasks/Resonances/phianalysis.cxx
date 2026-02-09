@@ -15,17 +15,18 @@
 ///
 /// \author Bong-Hwi Lim <bong-hwi.lim@cern.ch>
 
-#include <TLorentzVector.h>
+#include "PWGLF/DataModel/LFResonanceTables.h"
 
-#include "Common/DataModel/PIDResponse.h"
 #include "Common/DataModel/Centrality.h"
 #include "Common/DataModel/EventSelection.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/ASoAHelpers.h"
-#include "Framework/runDataProcessing.h"
-#include "PWGLF/DataModel/LFResonanceTables.h"
-#include "DataFormatsParameters/GRPObject.h"
+
 #include "CommonConstants/PhysicsConstants.h"
+#include "DataFormatsParameters/GRPObject.h"
+#include "Framework/ASoAHelpers.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/runDataProcessing.h"
+
+#include <TLorentzVector.h>
 
 using namespace o2;
 using namespace o2::framework;
@@ -66,8 +67,6 @@ struct phianalysis {
   Configurable<bool> cUseOnlyTOFTrackKa{"cUseOnlyTOFTrackKa", false, "Use only TOF track for PID selection"}; // Use only TOF track for PID selection
   /// TPC nCluster cut
   Configurable<int> cMinTPCNclsFound{"cMinTPCNclsFound", 70, "Minimum TPC cluster found"};
-  /// ITS nCluster cut
-  Configurable<int> cMinITSNcls{"cMinITSNcls", 0, "Minimum ITS nCluster"};
   // Kaon
   Configurable<double> cMaxTPCnSigmaKaon{"cMaxTPCnSigmaKaon", 3.0, "TPC nSigma cut for Kaon"};              // TPC
   Configurable<double> cMaxTOFnSigmaKaon{"cMaxTOFnSigmaKaon", 3.0, "TOF nSigma cut for Kaon"};              // TOF
@@ -141,8 +140,6 @@ struct phianalysis {
     if (std::abs(track.dcaZ()) > cMaxDCAzToPVcut)
       return false;
     if (track.tpcNClsFound() < cMinTPCNclsFound)
-      return false;
-    if (track.itsNCls() < cMinITSNcls)
       return false;
     if (cfgPrimaryTrack && !track.isPrimaryTrack())
       return false;

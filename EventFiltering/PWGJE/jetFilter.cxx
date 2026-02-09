@@ -11,31 +11,33 @@
 
 // Author: Filip Krizek
 
-#include <TMath.h>
-#include <cmath>
-#include <string>
+#include "../filterTables.h"
 
-#include "Framework/ASoA.h"
-#include "Framework/ASoAHelpers.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/runDataProcessing.h"
-#include "ReconstructionDataFormats/Track.h"
+#include "PWGJE/Core/FastJetUtilities.h"
+#include "PWGJE/Core/JetBkgSubUtils.h"
+#include "PWGJE/Core/JetDerivedDataUtilities.h"
+#include "PWGJE/Core/JetFinder.h"
+#include "PWGJE/DataModel/EMCALClusters.h"
+#include "PWGJE/DataModel/Jet.h"
 
 #include "Common/Core/TrackSelection.h"
 #include "Common/Core/TrackSelectionDefaults.h"
 #include "Common/DataModel/EventSelection.h"
 #include "Common/DataModel/TrackSelectionTables.h"
 
-#include "PWGJE/Core/JetFinder.h"
-#include "PWGJE/Core/FastJetUtilities.h"
-#include "PWGJE/Core/JetBkgSubUtils.h"
-#include "PWGJE/DataModel/EMCALClusters.h"
-#include "PWGJE/DataModel/Jet.h"
-
-#include "../filterTables.h"
-
+#include "Framework/ASoA.h"
+#include "Framework/ASoAHelpers.h"
+#include "Framework/AnalysisDataModel.h"
+#include "Framework/AnalysisTask.h"
 #include "Framework/HistogramRegistry.h"
+#include "Framework/runDataProcessing.h"
+#include "ReconstructionDataFormats/Track.h"
+
+#include <TMath.h>
+
+#include <cmath>
+#include <string>
+#include <vector>
 
 using namespace o2;
 using namespace o2::framework;
@@ -94,13 +96,13 @@ struct jetFilter {
 
   Filter trackFilter = (nabs(aod::jtrack::eta) < static_cast<float>(cfgEtaTPC)) && (aod::jtrack::pt > trackPtMin);
   int trackSelection = -1;
-  int eventSelection = -1;
+  std::vector<int> eventSelectionBits;
 
   void init(o2::framework::InitContext&)
   {
     triggerJetR = TMath::Nint(cfgJetR * 100.0f);
     trackSelection = jetderiveddatautilities::initialiseTrackSelection(static_cast<std::string>(trackSelections));
-    eventSelection = jetderiveddatautilities::initialiseEventSelection(static_cast<std::string>(evSel));
+    eventSelectionBits = jetderiveddatautilities::initialiseEventSelectionBits(static_cast<std::string>(evSel));
 
     spectra.add("fCollZpos", "collision z position", HistType::kTH1F,
                 {{200, -20., +20., "#it{z}_{vtx} position (cm)"}});
@@ -188,7 +190,7 @@ struct jetFilter {
 
     // collision process loop
     bool keepEvent[kTriggerObjects]{false, false, false, false};
-    if (!collision.selection_bit(aod::evsel::kNoTimeFrameBorder)) {
+    if (!jetderiveddatautilities::selectCollision(collision, jetderiveddatautilities::initialiseEventSelectionBits(static_cast<std::string>("NoTimeFrameBorder")))) {
       tags(keepEvent[kJetChLowPt], keepEvent[kJetChHighPt], keepEvent[kTrackLowPt], keepEvent[kTrackHighPt]);
       return;
     }
@@ -196,7 +198,7 @@ struct jetFilter {
     spectra.fill(HIST("fCollZpos"), collision.posZ());
     hProcessedEvents->Fill(static_cast<float>(kBinAllEvents) + 0.1f); // all minimum bias events
 
-    if (!jetderiveddatautilities::selectCollision(collision, eventSelection)) {
+    if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits)) {
       tags(keepEvent[kJetChLowPt], keepEvent[kJetChHighPt], keepEvent[kTrackLowPt], keepEvent[kTrackHighPt]);
       return;
     }
@@ -286,13 +288,13 @@ struct jetFilter {
     tags(keepEvent[kJetChLowPt], keepEvent[kJetChHighPt], keepEvent[kTrackLowPt], keepEvent[kTrackHighPt]);
   }
 
-  void processWithoutRho(soa::Join<aod::JetCollisions, aod::EvSels>::iterator const& collision, o2::aod::ChargedJets const& jets, soa::Filtered<aod::JetTracks> const& tracks)
+  void processWithoutRho(aod::JetCollision const& collision, o2::aod::ChargedJets const& jets, soa::Filtered<aod::JetTracks> const& tracks)
   {
     doTriggering<false>(collision, jets, tracks);
   }
   PROCESS_SWITCH(jetFilter, processWithoutRho, "Do charged jet triggering without background estimation for filling histograms", true);
 
-  void processWithRho(soa::Join<aod::JetCollisions, aod::BkgChargedRhos, aod::EvSels>::iterator const& collision, o2::aod::ChargedJets const& jets, soa::Filtered<aod::JetTracks> const& tracks)
+  void processWithRho(soa::Join<aod::JetCollisions, aod::BkgChargedRhos>::iterator const& collision, o2::aod::ChargedJets const& jets, soa::Filtered<aod::JetTracks> const& tracks)
   {
     doTriggering<true>(collision, jets, tracks);
   }

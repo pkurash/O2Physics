@@ -28,33 +28,35 @@
 //    david.dobrigkeit.chinellato@cern.ch
 //
 
-#include "Framework/runDataProcessing.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoAHelpers.h"
 #include "PWGHF/DataModel/CandidateReconstructionTables.h"
-#include "DCAFitter/DCAFitterN.h"
-#include "ReconstructionDataFormats/Track.h"
-#include "Common/Core/RecoDecay.h"
-#include "Common/Core/trackUtilities.h"
-#include "Common/DataModel/PIDResponse.h"
-#include "PWGLF/DataModel/LFStrangenessTables.h"
 #include "PWGLF/DataModel/LFStrangenessFinderTables.h"
-#include "Common/Core/TrackSelection.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "Common/DataModel/EventSelection.h"
-#include "Common/DataModel/Centrality.h"
+#include "PWGLF/DataModel/LFStrangenessTables.h"
 
+#include "Common/Core/RecoDecay.h"
+#include "Common/Core/TrackSelection.h"
+#include "Common/Core/trackUtilities.h"
+#include "Common/DataModel/Centrality.h"
+#include "Common/DataModel/EventSelection.h"
+#include "Common/DataModel/TrackSelectionTables.h"
+
+#include "DCAFitter/DCAFitterN.h"
+#include "Framework/ASoAHelpers.h"
+#include "Framework/AnalysisDataModel.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/runDataProcessing.h"
+#include "ReconstructionDataFormats/Track.h"
+
+#include <Math/Vector4D.h>
+#include <TDatabasePDG.h>
 #include <TFile.h>
-#include <TLorentzVector.h>
 #include <TH1F.h>
 #include <TH2F.h>
-#include <TProfile.h>
-#include <Math/Vector4D.h>
+#include <TLorentzVector.h>
 #include <TPDGCode.h>
-#include <TDatabasePDG.h>
-#include <cmath>
+#include <TProfile.h>
+
 #include <array>
+#include <cmath>
 #include <cstdlib>
 
 using namespace o2;
@@ -244,7 +246,7 @@ struct cascadefinder {
             auto lCascadeTrack = fitterCasc.createParentTrackPar();
             lCascadeTrack.setAbsCharge(-1);                // to be sure
             lCascadeTrack.setPID(o2::track::PID::XiMinus); // FIXME: not OK for omegas
-            gpu::gpustd::array<float, 2> dcaInfo;
+            std::array<float, 2> dcaInfo;
             dcaInfo[0] = 999;
             dcaInfo[1] = 999;
 
@@ -270,9 +272,9 @@ struct cascadefinder {
                      t0id.dcaXY(),
                      dcaInfo[0], dcaInfo[1]);
           } // end if cascade recoed
-        }   // end loop over bachelor
-      }     // end if v0 recoed
-    }       // end loop over cascades
+        } // end loop over bachelor
+      } // end if v0 recoed
+    } // end loop over cascades
 
     // Anticascades
     for (auto& v0id : antiLambdas) {
@@ -334,7 +336,7 @@ struct cascadefinder {
             auto lCascadeTrack = fitterCasc.createParentTrackPar();
             lCascadeTrack.setAbsCharge(+1);                // to be sure
             lCascadeTrack.setPID(o2::track::PID::XiMinus); // FIXME: not OK for omegas
-            gpu::gpustd::array<float, 2> dcaInfo;
+            std::array<float, 2> dcaInfo;
             dcaInfo[0] = 999;
             dcaInfo[1] = 999;
 
@@ -361,9 +363,9 @@ struct cascadefinder {
                      t0id.dcaXY(),
                      dcaInfo[0], dcaInfo[1]);
           } // end if cascade recoed
-        }   // end loop over bachelor
-      }     // end if v0 recoed
-    }       // end loop over anticascades
+        } // end loop over bachelor
+      } // end if v0 recoed
+    } // end loop over anticascades
 
     hCandPerEvent->Fill(lNCand);
   }
@@ -430,17 +432,10 @@ struct cascadefinderQA {
   }
 };
 
-/// Extends the cascdata table with expression columns
-struct cascadeinitializer {
-  Spawns<aod::CascCores> cascdataext;
-  void init(InitContext const&) {}
-};
-
 WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
 {
   return WorkflowSpec{
     adaptAnalysisTask<cascadeprefilter>(cfgc, TaskName{"lf-cascadeprefilter"}),
     adaptAnalysisTask<cascadefinder>(cfgc, TaskName{"lf-cascadefinder"}),
-    adaptAnalysisTask<cascadefinderQA>(cfgc, TaskName{"lf-cascadefinderQA"}),
-    adaptAnalysisTask<cascadeinitializer>(cfgc, TaskName{"lf-cascadeinitializer"})};
+    adaptAnalysisTask<cascadefinderQA>(cfgc, TaskName{"lf-cascadefinderQA"})};
 }

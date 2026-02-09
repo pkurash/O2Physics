@@ -14,21 +14,33 @@
 ///
 /// \author Fabio Catalano <fabio.catalano@cern.ch>, CERN
 
-#include <memory>
-
-#include "CommonConstants/PhysicsConstants.h"
-#include "DCAFitter/DCAFitterN.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/runDataProcessing.h"
-#include "ReconstructionDataFormats/DCA.h"
-
-#include "Common/Core/trackUtilities.h"
-#include "Common/DataModel/CollisionAssociationTables.h"
-
-#include "PWGHF/DataModel/CandidateReconstructionTables.h"
-#include "PWGHF/DataModel/CandidateSelectionTables.h"
 #include "PWGHF/D2H/DataModel/ReducedDataModel.h"
+#include "PWGHF/DataModel/CandidateReconstructionTables.h"
 #include "PWGHF/Utils/utilsTrkCandHf.h"
+
+#include "Common/Core/RecoDecay.h"
+#include "Common/Core/trackUtilities.h"
+
+#include <CommonConstants/PhysicsConstants.h>
+#include <DCAFitter/DCAFitterN.h>
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Configurable.h>
+#include <Framework/HistogramRegistry.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/Logger.h>
+#include <Framework/runDataProcessing.h>
+#include <ReconstructionDataFormats/DCA.h>
+
+#include <TH1.h>
+
+#include <array>
+#include <cmath>
+#include <memory>
+#include <numeric>
+#include <stdexcept>
 
 using namespace o2;
 using namespace o2::aod;
@@ -104,7 +116,7 @@ struct HfCandidateCreatorBsReduced {
   /// \param tracksPionThisCollision pion tracks in this collision
   /// \param invMass2DPiMin minimum Bs invariant-mass
   /// \param invMass2DPiMax maximum Bs invariant-mass
-  template <bool withDmesMl, typename Cands, typename Pions, typename Coll>
+  template <bool WithDmesMl, typename Cands, typename Pions, typename Coll>
   void runCandidateCreation(Coll const& collision,
                             Cands const& candsDThisColl,
                             Pions const& tracksPionThisCollision,
@@ -157,8 +169,7 @@ struct HfCandidateCreatorBsReduced {
         registry.fill(HIST("hCovSVXX"), covMatrixPCA[0]);
         registry.fill(HIST("hCovPVXX"), covMatrixPV[0]);
 
-        // propagate Ds and Pi to the Bs vertex
-        df2.propagateTracksToVertex();
+        // get Ds and Pi tracks (propagated to the B0 vertex if propagateToPCA==true)
         // track.getPxPyPzGlo(pVec) modifies pVec of track
         df2.getTrack(0).getPxPyPzGlo(pVecD);    // momentum of Ds at the Bs vertex
         df2.getTrack(1).getPxPyPzGlo(pVecPion); // momentum of Pi at the Bs vertex
@@ -191,7 +202,7 @@ struct HfCandidateCreatorBsReduced {
 
         rowCandidateProngs(candD.globalIndex(), trackPion.globalIndex());
 
-        if constexpr (withDmesMl) {
+        if constexpr (WithDmesMl) {
           if (candD.invMassHypo0() > 0) {
             rowCandidateDmesMlScores(candD.mlScoreBkgMassHypo0(), candD.mlScorePromptMassHypo0(), candD.mlScoreNonpromptMassHypo0());
           } else {
@@ -215,8 +226,8 @@ struct HfCandidateCreatorBsReduced {
     }
     // invMassWindowDPiTolerance is used to apply a slightly tighter cut than in DsPi pair preselection
     // to avoid accepting DsPi pairs that were not formed in DsPi pair creator
-    float invMass2DPiMin = (massB - myInvMassWindowDPi + invMassWindowDPiTolerance) * (massB - myInvMassWindowDPi + invMassWindowDPiTolerance);
-    float invMass2DPiMax = (massB + myInvMassWindowDPi - invMassWindowDPiTolerance) * (massB + myInvMassWindowDPi - invMassWindowDPiTolerance);
+    float const invMass2DPiMin = (massB - myInvMassWindowDPi + invMassWindowDPiTolerance) * (massB - myInvMassWindowDPi + invMassWindowDPiTolerance);
+    float const invMass2DPiMax = (massB + myInvMassWindowDPi - invMassWindowDPiTolerance) * (massB + myInvMassWindowDPi - invMassWindowDPiTolerance);
 
     for (const auto& collisionCounter : collisionsCounter) {
       registry.fill(HIST("hEvents"), 1, collisionCounter.originalCollisionCount());
@@ -249,8 +260,8 @@ struct HfCandidateCreatorBsReduced {
     }
     // invMassWindowDPiTolerance is used to apply a slightly tighter cut than in DsPi pair preselection
     // to avoid accepting DPi pairs that were not formed in DsPi pair creator
-    float invMass2DPiMin = (massB - myInvMassWindowDPi + invMassWindowDPiTolerance) * (massB - myInvMassWindowDPi + invMassWindowDPiTolerance);
-    float invMass2DPiMax = (massB + myInvMassWindowDPi - invMassWindowDPiTolerance) * (massB + myInvMassWindowDPi - invMassWindowDPiTolerance);
+    float const invMass2DPiMin = (massB - myInvMassWindowDPi + invMassWindowDPiTolerance) * (massB - myInvMassWindowDPi + invMassWindowDPiTolerance);
+    float const invMass2DPiMax = (massB + myInvMassWindowDPi - invMassWindowDPiTolerance) * (massB + myInvMassWindowDPi - invMassWindowDPiTolerance);
 
     for (const auto& collisionCounter : collisionsCounter) {
       registry.fill(HIST("hEvents"), 1, collisionCounter.originalCollisionCount());
@@ -283,7 +294,7 @@ struct HfCandidateCreatorBsReducedExpressions {
   /// \param checkDecayTypeMc
   /// \param rowsDPiMcRec MC reco information on DsPi pairs
   /// \param candsB prong global indices of Bs candidates
-  template <bool checkDecayTypeMc, typename McRec>
+  template <bool CheckDecayTypeMc, typename McRec>
   void fillBsMcRec(McRec const& rowsDPiMcRec, HfRedBsProngs const& candsB)
   {
     for (const auto& candB : candsB) {
@@ -292,9 +303,9 @@ struct HfCandidateCreatorBsReducedExpressions {
         if ((rowDPiMcRec.prong0Id() != candB.prong0Id()) || (rowDPiMcRec.prong1Id() != candB.prong1Id())) {
           continue;
         }
-        rowBsMcRec(rowDPiMcRec.flagMcMatchRec(), rowDPiMcRec.flagWrongCollision(), rowDPiMcRec.debugMcRec(), rowDPiMcRec.ptMother());
+        rowBsMcRec(rowDPiMcRec.flagMcMatchRec(), -1 /*channel*/, rowDPiMcRec.flagWrongCollision(), rowDPiMcRec.debugMcRec(), rowDPiMcRec.ptMother());
         filledMcInfo = true;
-        if constexpr (checkDecayTypeMc) {
+        if constexpr (CheckDecayTypeMc) {
           rowBsMcCheck(rowDPiMcRec.pdgCodeBeautyMother(),
                        rowDPiMcRec.pdgCodeCharmMother(),
                        rowDPiMcRec.pdgCodeProng0(),
@@ -305,8 +316,8 @@ struct HfCandidateCreatorBsReducedExpressions {
         break;
       }
       if (!filledMcInfo) { // protection to get same size tables in case something went wrong: we created a candidate that was not preselected in the DsPi creator
-        rowBsMcRec(0, -1, -1, -1.f);
-        if constexpr (checkDecayTypeMc) {
+        rowBsMcRec(0, -1, -1, -1, -1.f);
+        if constexpr (CheckDecayTypeMc) {
           rowBsMcCheck(-1, -1, -1, -1, -1, -1);
         }
       }

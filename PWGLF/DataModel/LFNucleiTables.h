@@ -16,8 +16,9 @@
 ///
 
 #include "Common/CCDB/EventSelectionParams.h"
-#include "Framework/AnalysisDataModel.h"
+
 #include "Framework/ASoAHelpers.h"
+#include "Framework/AnalysisDataModel.h"
 
 #ifndef PWGLF_DATAMODEL_LFNUCLEITABLES_H_
 #define PWGLF_DATAMODEL_LFNUCLEITABLES_H_
@@ -62,6 +63,8 @@ DECLARE_SOA_DYNAMIC_COLUMN(Rapidity, rapidity,
                              const auto energy = sqrt(p * p + mass * mass);
                              return 0.5f * log((energy + pz) / (energy - pz));
                            });
+// ITS
+DECLARE_SOA_COLUMN(ITSClusterSizes, itsClusterSizes, uint32_t); //! ITS cluster sizes per layer
 // TPC
 DECLARE_SOA_COLUMN(TPCNSigmaPi, tpcNSigmaPi, float);
 DECLARE_SOA_COLUMN(TPCNSigmaKa, tpcNSigmaKa, float);
@@ -95,6 +98,7 @@ DECLARE_SOA_COLUMN(TOFExpMom, tofExpMom, float);
 DECLARE_SOA_COLUMN(TPCSignal, tpcSignal, float);
 DECLARE_SOA_COLUMN(Beta, beta, float);
 // TPC and ITS QA
+DECLARE_SOA_COLUMN(PIDForTracking, pidForTracking, uint8_t);
 DECLARE_SOA_COLUMN(ITSNCls, itsNCls, int16_t);
 DECLARE_SOA_COLUMN(TPCChi2Ncl, tpcChi2NCl, float);
 DECLARE_SOA_COLUMN(ITSChi2NCl, itsChi2NCl, float);
@@ -166,6 +170,7 @@ DECLARE_SOA_TABLE(LfCandNucleus, "AOD", "LFNUCL",
                   full::HasTRD,
                   full::TPCInnerParam,
                   full::Beta,
+                  full::PIDForTracking,
                   full::TPCSignal,
                   full::Pt,
                   full::Eta,
@@ -181,6 +186,7 @@ DECLARE_SOA_TABLE(LfCandNucleus, "AOD", "LFNUCL",
                   full::IsPVContributor,
                   full::P<full::Pt, full::Eta>,
                   full::Rapidity<full::Pt, full::Eta>,
+                  full::ITSClusterSizes,
                   track::TPCNClsFound<track::TPCNClsFindable, track::TPCNClsFindableMinusFound>,
                   track::TPCNClsCrossedRows<track::TPCNClsFindable, track::TPCNClsFindableMinusCrossedRows>,
                   track::TPCCrossedRowsOverFindableCls<track::TPCNClsFindable, track::TPCNClsFindableMinusCrossedRows>,
@@ -197,6 +203,7 @@ DECLARE_SOA_TABLE_VERSIONED(LfCandNucleusDummy, "AOD", "LFNUCL", 1,
                             full::HasTRD,
                             full::TPCInnerParam,
                             full::Beta,
+                            full::PIDForTracking,
                             full::TPCSignal,
                             full::Pt,
                             full::Eta,
@@ -211,6 +218,7 @@ DECLARE_SOA_TABLE_VERSIONED(LfCandNucleusDummy, "AOD", "LFNUCL", 1,
                             track::ITSClusterMap,
                             full::IsPVContributor,
                             full::P<full::Pt, full::Eta>,
+                            full::ITSClusterSizes,
                             dummy::TPCNSigmaPi<full::HasTOF>, dummy::TPCNSigmaKa<full::HasTOF>, dummy::TPCNSigmaPr<full::HasTOF>,
                             dummy::TPCNSigmaTr<full::HasTOF>, dummy::TPCNSigmaAl<full::HasTOF>,
                             dummy::TOFNSigmaPi<full::HasTOF>, dummy::TOFNSigmaKa<full::HasTOF>, dummy::TOFNSigmaPr<full::HasTOF>,

@@ -13,9 +13,24 @@
 //
 /// \author Nima Zardoshti <nima.zardoshti@cern.ch>
 
-#include "PWGJE/Tasks/jetSubstructureHF.cxx"
+#include "PWGJE/DataModel/Jet.h"
+#include "PWGJE/DataModel/JetSubstructure.h"
+#include "PWGJE/DataModel/JetSubtraction.h"
+#include "PWGJE/Tasks/jetSubstructureHF.h"
 
-using JetSubstructureDielectron = JetSubstructureHFTask<soa::Join<aod::DielectronChargedJets, aod::DielectronChargedJetConstituents>, soa::Join<aod::DielectronChargedMCDetectorLevelJets, aod::DielectronChargedMCDetectorLevelJetConstituents>, soa::Join<aod::DielectronChargedMCParticleLevelJets, aod::DielectronChargedMCParticleLevelJetConstituents>, soa::Join<aod::DielectronChargedEventWiseSubtractedJets, aod::DielectronChargedEventWiseSubtractedJetConstituents>, aod::CandidatesDielectronData, aod::CandidatesDielectronMCP, aod::DielectronCJetSSs, aod::DielectronCMCDJetSSs, aod::DielectronCMCPJetSSs, aod::DielectronCEWSJetSSs, aod::JTrackDielectronSubs>;
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/ConfigContext.h>
+#include <Framework/DataProcessorSpec.h>
+#include <Framework/runDataProcessing.h>
+
+#include <vector>
+
+using namespace o2;
+using namespace o2::framework;
+using namespace o2::framework::expressions;
+
+using JetSubstructureDielectron = JetSubstructureHFTask<soa::Join<aod::DielectronChargedJets, aod::DielectronChargedJetConstituents>, soa::Join<aod::DielectronChargedMCDetectorLevelJets, aod::DielectronChargedMCDetectorLevelJetConstituents>, soa::Join<aod::DielectronChargedMCParticleLevelJets, aod::DielectronChargedMCParticleLevelJetConstituents>, soa::Join<aod::DielectronChargedEventWiseSubtractedJets, aod::DielectronChargedEventWiseSubtractedJetConstituents>, aod::CandidatesDielectronData, aod::CandidatesDielectronMCP, aod::DielectronCJetSSs, aod::DielectronCJetRs, aod::DielectronChargedSPs, aod::DielectronChargedPRs, aod::DielectronCMCDJetSSs, aod::DielectronCMCDJetRs, aod::DielectronChargedMCDetectorLevelSPs, aod::DielectronChargedMCDetectorLevelPRs, aod::DielectronCMCPJetSSs, aod::DielectronCMCPJetRs, aod::DielectronChargedMCParticleLevelSPs, aod::DielectronChargedMCParticleLevelPRs, aod::DielectronCEWSJetSSs, aod::DielectronChargedEventWiseSubtractedSPs, aod::DielectronChargedEventWiseSubtractedPRs, aod::JTrackDielectronSubs>;
 
 WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
 {

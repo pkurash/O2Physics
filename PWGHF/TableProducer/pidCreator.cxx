@@ -14,18 +14,25 @@
 ///
 /// \author Vít Kučera <vit.kucera@cern.ch>, Inha University
 
-#include <string>
-
-#include "Framework/AnalysisTask.h"
-#include "Framework/runDataProcessing.h"
+#include "PWGHF/DataModel/AliasTables.h" // IWYU pragma: keep
+#include "PWGHF/DataModel/CandidateReconstructionTables.h"
+#include "PWGHF/Utils/utilsPid.h"
 
 #include "Common/Core/TableHelper.h"
-#include "Common/DataModel/PIDResponse.h"
 
-#include "PWGHF/DataModel/CandidateReconstructionTables.h"
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Configurable.h>
+#include <Framework/InitContext.h>
+#include <Framework/Logger.h>
+#include <Framework/runDataProcessing.h>
+
+#include <string>
 
 using namespace o2;
 using namespace o2::framework;
+using namespace o2::aod::pid_tpc_tof_utils;
 
 struct HfPidCreator {
   Produces<aod::PidTpcTofFullEl> trackPidFullEl;
@@ -38,9 +45,12 @@ struct HfPidCreator {
   Produces<aod::PidTpcTofTinyKa> trackPidTinyKa;
   Produces<aod::PidTpcTofFullPr> trackPidFullPr;
   Produces<aod::PidTpcTofTinyPr> trackPidTinyPr;
-
-  static constexpr float defaultNSigmaTolerance = .1f;
-  static constexpr float defaultNSigma = -999.f + defaultNSigmaTolerance; // -999.f is the default value set in TPCPIDResponse.h and PIDTOF.h
+  Produces<aod::PidTpcTofFullDe> trackPidFullDe;
+  Produces<aod::PidTpcTofTinyDe> trackPidTinyDe;
+  Produces<aod::PidTpcTofFullTr> trackPidFullTr;
+  Produces<aod::PidTpcTofTinyTr> trackPidTinyTr;
+  Produces<aod::PidTpcTofFullHe> trackPidFullHe;
+  Produces<aod::PidTpcTofTinyHe> trackPidTinyHe;
 
   /// Function to check whether the process function flag matches the need for filling the table
   /// \param initContext  workflow context (argument of the init function)
@@ -73,30 +83,12 @@ struct HfPidCreator {
     checkTableSwitch(initContext, "PidTpcTofTinyKa", doprocessTinyKa);
     checkTableSwitch(initContext, "PidTpcTofFullPr", doprocessFullPr);
     checkTableSwitch(initContext, "PidTpcTofTinyPr", doprocessTinyPr);
-  }
-
-  /// Function to combine TPC and TOF NSigma
-  /// \param tiny switch between full and tiny (binned) PID tables
-  /// \param tpcNSigma is the (binned) NSigma separation in TPC (if tiny = true)
-  /// \param tofNSigma is the (binned) NSigma separation in TOF (if tiny = true)
-  /// \return combined NSigma of TPC and TOF
-  template <bool tiny, typename T1>
-  T1 combineNSigma(T1 tpcNSigma, T1 tofNSigma)
-  {
-    if constexpr (tiny) {
-      tpcNSigma *= aod::pidtpc_tiny::binning::bin_width;
-      tofNSigma *= aod::pidtof_tiny::binning::bin_width;
-    }
-    if ((tpcNSigma > defaultNSigma) && (tofNSigma > defaultNSigma)) { // TPC and TOF
-      return std::sqrt(.5f * (tpcNSigma * tpcNSigma + tofNSigma * tofNSigma));
-    }
-    if (tpcNSigma > defaultNSigma) { // only TPC
-      return std::abs(tpcNSigma);
-    }
-    if (tofNSigma > defaultNSigma) { // only TOF
-      return std::abs(tofNSigma);
-    }
-    return tofNSigma; // no TPC nor TOF
+    checkTableSwitch(initContext, "PidTpcTofFullDe", doprocessFullDe);
+    checkTableSwitch(initContext, "PidTpcTofTinyDe", doprocessTinyDe);
+    checkTableSwitch(initContext, "PidTpcTofFullTr", doprocessFullTr);
+    checkTableSwitch(initContext, "PidTpcTofTinyTr", doprocessTinyTr);
+    checkTableSwitch(initContext, "PidTpcTofFullHe", doprocessFullHe);
+    checkTableSwitch(initContext, "PidTpcTofTinyHe", doprocessTinyHe);
   }
 
   void processDummy(aod::Collisions const&) {}
@@ -126,6 +118,9 @@ struct HfPidCreator {
   PROCESS_PID(Pi)
   PROCESS_PID(Ka)
   PROCESS_PID(Pr)
+  PROCESS_PID(De)
+  PROCESS_PID(Tr)
+  PROCESS_PID(He)
 
 #undef PROCESS_PID
 };

@@ -1,4 +1,4 @@
-// Copyright 2019-2023 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2025 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -9,49 +9,68 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 //
-// ========================
-// \file photonconversionbuilder.cxx
-// \brief this task produces photon data table with KFParticle.
-//
-// \author Daiki Sekihata <daiki.sekihata@cern.ch>, Tokyo
 
-#include <cmath>
-#include <array>
-#include <cstdlib>
-#include <map>
-#include <iterator>
-#include <utility>
-#include <string>
-#include <set>
-#include <algorithm>
-#include <vector>
-#include <unordered_map>
+/// \file photonconversionbuilder.cxx
+/// \brief this task produces photon data table with KFParticle.
+/// \author Daiki Sekihata <daiki.sekihata@cern.ch>, Tokyo
 
-#include "Math/Vector4D.h"
+#ifndef HomogeneousField
+#define HomogeneousField // needed for KFParticle::SetField(magneticField);
+#endif
 
-#include "Framework/runDataProcessing.h"
-#include "Framework/RunningWorkflowInfo.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoAHelpers.h"
-#include "ReconstructionDataFormats/Track.h"
-#include "Common/Core/RecoDecay.h"
-#include "Common/Core/trackUtilities.h"
-#include "Common/Core/TrackSelection.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "DetectorsBase/Propagator.h"
-#include "DetectorsBase/GeometryManager.h"
-#include "DataFormatsParameters/GRPObject.h"
-#include "DataFormatsParameters/GRPMagField.h"
-#include "CCDB/BasicCCDBManager.h"
-#include "Common/Core/TableHelper.h"
-#include "Common/Core/TPCVDriftManager.h"
-
-#include "Tools/KFparticle/KFUtilities.h"
-
+#include "PWGEM/PhotonMeson/Core/EmMlResponsePCM.h"
+#include "PWGEM/PhotonMeson/Core/V0PhotonCandidate.h"
+#include "PWGEM/PhotonMeson/Core/V0PhotonCut.h"
 #include "PWGEM/PhotonMeson/DataModel/gammaTables.h"
 #include "PWGEM/PhotonMeson/Utils/PCMUtilities.h"
 #include "PWGEM/PhotonMeson/Utils/TrackSelection.h"
+
+#include "Common/Core/RecoDecay.h"
+#include "Common/Core/TPCVDriftManager.h"
+#include "Common/Core/trackUtilities.h"
+#include "Common/DataModel/Centrality.h"
+#include "Common/DataModel/EventSelection.h"
+#include "Common/DataModel/PIDResponseTPC.h"
+#include "Tools/KFparticle/KFUtilities.h"
+
+#include <CCDB/BasicCCDBManager.h>
+#include <CCDB/CcdbApi.h>
+#include <CommonConstants/MathConstants.h>
+#include <CommonConstants/PhysicsConstants.h>
+#include <DataFormatsParameters/GRPMagField.h>
+#include <DataFormatsParameters/GRPObject.h>
+#include <DetectorsBase/GeometryManager.h>
+#include <DetectorsBase/MatLayerCylSet.h>
+#include <DetectorsBase/Propagator.h>
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Array2D.h>
+#include <Framework/Configurable.h>
+#include <Framework/HistogramRegistry.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/runDataProcessing.h>
+#include <ReconstructionDataFormats/PID.h>
+
+#include <Math/Vector4D.h> // IWYU pragma: keep
+#include <Math/Vector4Dfwd.h>
+#include <TPDGCode.h>
+
+#include <KFPTrack.h>
+#include <KFPVertex.h>
+#include <KFParticle.h>
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <map>
+#include <set>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 using namespace o2;
 using namespace o2::soa;
@@ -61,18 +80,27 @@ using namespace o2::constants::physics;
 using namespace o2::pwgem::photonmeson;
 using std::array;
 
-using MyCollisions = soa::Join<aod::Collisions, aod::EvSels>;
-using MyCollisionsWithSWT = soa::Join<MyCollisions, aod::EMSWTriggerInfosTMP>;
+using MyCollisions = soa::Join<aod::Collisions, aod::EvSels, aod::EMEvSels, aod::CentFT0Ms, aod::CentFT0As, aod::CentFT0Cs>;
+using MyCollisionsWithSWT = soa::Join<MyCollisions, aod::EMSWTriggerBitsTMP>;
 using MyCollisionsMC = soa::Join<MyCollisions, aod::McCollisionLabels>;
 
-using MyTracksIU = soa::Join<aod::TracksIU, aod::TracksExtra, aod::TracksCovIU, aod::TracksDCA, aod::pidTPCFullEl, aod::pidTPCFullPi>;
-using MyTracksIUMC = soa::Join<MyTracksIU, aod::McTrackLabels>;
+using MyTracksIU = soa::Join<aod::TracksIU, aod::TracksExtra, aod::TracksCovIU, aod::pidTPCFullEl, aod::pidTPCFullPi>;
+using MyTracksIUMC = soa::Join<MyTracksIU, aod::McTrackLabels, aod::mcTPCTuneOnData>;
+
+enum MatCorrType {
+  None = 0,
+  TGeo = 1,
+  LUT = 2
+};
 
 struct PhotonConversionBuilder {
   Produces<aod::V0PhotonsKF> v0photonskf;
-  Produces<aod::V0PhotonsKFCov> v0photonskfcov;
   Produces<aod::V0Legs> v0legs;
-  Produces<aod::EMEventsNgPCM> events_ngpcm;
+  Produces<aod::V0LegsXYZ> v0legsXYZ;
+  Produces<aod::V0LegsDeDxMC> v0legsDeDxMC;
+  Produces<aod::V0PhotonsPhiV> v0photonsphiv;
+  // Produces<aod::V0PhotonsKFCov> v0photonskfcov;
+  // Produces<aod::EMEventsNgPCM> events_ngpcm;
 
   // CCDB options
   Configurable<std::string> ccdburl{"ccdb-url", "http://alice-ccdb.cern.ch", "url of the ccdb repository"};
@@ -81,18 +109,18 @@ struct PhotonConversionBuilder {
   Configurable<std::string> lutPath{"lutPath", "GLO/Param/MatLUT", "Path of the Lut parametrization"};
   Configurable<std::string> geoPath{"geoPath", "GLO/Config/GeometryAligned", "Path of the geometry file"};
   Configurable<bool> skipGRPOquery{"skipGRPOquery", true, "skip grpo query"};
-  Configurable<bool> inherit_from_emevent_photon{"inherit_from_emevent_photon", false, "flag to inherit task options from emevent-photon"};
 
   // Operation and minimisation criteria
   Configurable<double> d_bz_input{"d_bz", -999, "bz field, -999 is automatic"};
   Configurable<int> useMatCorrType{"useMatCorrType", 0, "0: none, 1: TGeo, 2: LUT"};
-  Configurable<bool> applyEveSel_at_skimming{"applyEveSel_at_skimming", false, "flag to apply minimal event selection at the skimming level"};
 
   // single track cuts
   Configurable<int> min_ncluster_tpc{"min_ncluster_tpc", 0, "min ncluster tpc"};
   Configurable<int> mincrossedrows{"mincrossedrows", 40, "min crossed rows"};
   Configurable<bool> moveTPCTracks{"moveTPCTracks", true, "Move TPC-only tracks under the collision assumption"};
   Configurable<bool> disableITSonlyTracks{"disableITSonlyTracks", false, "disable ITSonly tracks in V0 legs"};
+  Configurable<bool> disableTPConlyTracks{"disableTPConlyTracks", false, "disable TPConly tracks in V0 legs"};
+  Configurable<bool> requireITShit{"requireITShit", false, "require ITS hit to V0 legs"};
 
   Configurable<float> maxchi2tpc{"maxchi2tpc", 5.0, "max chi2/NclsTPC"}; // default 4.0 + 1.0
   Configurable<float> maxchi2its{"maxchi2its", 6.0, "max chi2/NclsITS"}; // default 5.0 + 1.0
@@ -102,8 +130,6 @@ struct PhotonConversionBuilder {
   Configurable<float> max_frac_shared_clusters_tpc{"max_frac_shared_clusters_tpc", 999.f, "max fraction of shared clusters in TPC"};
   Configurable<float> dcanegtopv{"dcanegtopv", 0.1, "DCA Neg To PV"};
   Configurable<float> dcapostopv{"dcapostopv", 0.1, "DCA Pos To PV"};
-  Configurable<float> min_pt_leg_at_sv{"min_pt_leg_at_sv", 0.0, "min pT for v0 legs at SV"};                                                    // this is obsolete.
-  Configurable<float> max_mean_its_cluster_size{"max_mean_its_cluster_size", 16.f, "max. <ITS cluster size> x cos(lambda) for ITSonly tracks"}; // this is to suppress random combination for V0s with ITSonly tracks. default 3 + 1 for skimming.
   Configurable<float> maxX{"maxX", 83.1, "max X for track IU"};
   Configurable<float> min_pt_trackiu{"min_pt_trackiu", 0.05, "min pT for trackiu"}; // this comes from online processing. pT of track seed is above 50 MeV/c in B = 0.5 T, 20 MeV/c in B = 0.2 T.
 
@@ -115,6 +141,7 @@ struct PhotonConversionBuilder {
   Configurable<float> max_dcav0dau_itsibss{"max_dcav0dau_itsibss", 1.0, "max distance btween 2 legs to V0s with ITS hits on ITSib SS"};
   Configurable<float> max_dcav0dau_tpc_inner_fc{"max_dcav0dau_tpc_inner_fc", 1.5, "max distance btween 2 legs to V0s with ITS hits on TPC inner FC"};
   Configurable<float> min_v0radius{"min_v0radius", 1.0, "min v0 radius"};
+  Configurable<float> max_v0radius{"max_v0radius", 90.0, "max v0 radius"};
   Configurable<float> margin_r_its{"margin_r_its", 3.0, "margin for r cut in cm"};
   Configurable<float> margin_r_tpc{"margin_r_tpc", 7.0, "margin for r cut in cm"};
   Configurable<float> margin_r_itstpc_tpc{"margin_r_itstpc_tpc", 7.0, "margin for r cut in cm"};
@@ -131,6 +158,27 @@ struct PhotonConversionBuilder {
   Configurable<float> max_dcatopv_xy_v0{"max_dcatopv_xy_v0", +1e+10, "max. DCAxy to PV for V0"};
   Configurable<float> max_dcatopv_z_v0{"max_dcatopv_z_v0", +1e+10, "max. DCAz to PV for V0"};
   Configurable<bool> reject_v0_on_itsib{"reject_v0_on_itsib", true, "flag to reject v0s on ITSib"};
+
+  // PCM ML inference
+  Configurable<bool> applyPCMMl{"applyPCMMl", false, "Flag to apply ML selections"};
+  Configurable<bool> use2DBinning{"use2DBinning", false, "Flag to enable/disable 2D binning for ML application"};
+  Configurable<bool> loadModelsFromCCDB{"loadModelsFromCCDB", false, "Flag to enable or disable the loading of models from CCDB"};
+  Configurable<int> nClassesPCMMl{"nClassesPCMMl", static_cast<int>(o2::analysis::em_cuts_ml::NCutScores), "Number of classes in ML model"};
+  Configurable<int> timestampCCDB{"timestampCCDB", -1, "timestamp of the ONNX file for ML model used to query in CCDB"};
+  Configurable<std::string> centTypePCMMl{"centTypePCMMl", "CentFT0C", "Centrality type for 2D ML application: CentFT0C, CentFT0M, or CentFT0A"};
+  Configurable<std::vector<int>> cutDirPCMMl{"cutDirPCMMl", std::vector<int>{o2::analysis::em_cuts_ml::vecCutDir}, "Whether to reject score values greater or smaller than the threshold"};
+  Configurable<std::vector<std::string>> namesInputFeatures{"namesInputFeatures", std::vector<std::string>{"feature1", "feature2"}, "Names of ML model input features"};
+  Configurable<std::vector<std::string>> modelPathsCCDB{"modelPathsCCDB", std::vector<std::string>{"path_ccdb/BDT_PCM/"}, "Paths of models on CCDB"};
+  Configurable<std::vector<std::string>> onnxFileNames{"onnxFileNames", std::vector<std::string>{"ModelHandler_onnx_PCM.onnx"}, "ONNX file names for each pT bin (if not from CCDB full path)"};
+  Configurable<std::vector<std::string>> labelsBinsPCMMl{"labelsBinsPCMMl", std::vector<std::string>{"bin 0", "bin 1"}, "Labels for bins"};
+  Configurable<std::vector<std::string>> labelsCutScoresPCMMl{"labelsCutScoresPCMMl", std::vector<std::string>{o2::analysis::em_cuts_ml::labelsCutScore}, "Labels for cut scores"};
+  Configurable<std::vector<double>> binsPtPCMMl{"binsPtPCMMl", std::vector<double>{0.0, +1e+10}, "pT bin limits for ML application"};
+  Configurable<std::vector<double>> binsCentPCMMl{"binsCentPCMMl", std::vector<double>{0.0, 100.0}, "Centrality bin limits for ML application"};
+  Configurable<std::vector<double>> cutsPCMMlFlat{"cutsPCMMlFlat", {0.5}, "Flattened ML cuts: [bin0_score0, bin0_score1, ..., binN_scoreM]"};
+
+  o2::analysis::EmMlResponsePCM<float> emMlResponse;
+  std::vector<float> outputML;
+  o2::ccdb::CcdbApi ccdbApi;
 
   int mRunNumber;
   float d_bz;
@@ -149,14 +197,14 @@ struct PhotonConversionBuilder {
       {"V0/hConversionPointXY", "conversion point in XY;X (cm);Y (cm)", {HistType::kTH2F, {{400, -100.0f, 100.0f}, {400, -100.f, 100.f}}}},
       {"V0/hConversionPointRZ", "conversion point in RZ;Z (cm);R_{xy} (cm)", {HistType::kTH2F, {{200, -100.0f, 100.0f}, {200, 0.f, 100.f}}}},
       {"V0/hPt", "pT of V0 at PV;p_{T,#gamma} (GeV/c)", {HistType::kTH1F, {{1000, 0.0f, 10.0f}}}},
-      {"V0/hEtaPhi", "#eta vs. #varphi of V0 at PV;#varphi (rad.);#eta", {HistType::kTH2F, {{72, 0.0f, 2 * M_PI}, {200, -1, +1}}}},
+      {"V0/hEtaPhi", "#eta vs. #varphi of V0 at PV;#varphi (rad.);#eta", {HistType::kTH2F, {{72, 0.0f, o2::constants::math::TwoPI}, {200, -1, +1}}}},
       {"V0/hCosPA", "cosine of pointing angle;cosine of pointing angle", {HistType::kTH1F, {{100, 0.99f, 1.f}}}},
       {"V0/hCosPA_Rxy", "cosine of pointing angle;r_{xy} (cm);cosine of pointing angle", {HistType::kTH2F, {{200, 0, 100}, {100, 0.99f, 1.f}}}},
       {"V0/hCosPAXY_Rxy", "cosine of pointing angle;r_{xy} (cm);cosine of pointing angle", {HistType::kTH2F, {{200, 0, 100}, {100, 0.99f, 1.f}}}},
       {"V0/hCosPARZ_Rxy", "cosine of pointing angle;r_{xy} (cm);cosine of pointing angle", {HistType::kTH2F, {{200, 0, 100}, {100, 0.99f, 1.f}}}},
       {"V0/hPCA", "distance between 2 legs at SV;PCA (cm)", {HistType::kTH1F, {{500, 0.0f, 5.f}}}},
       {"V0/hPCA_Rxy", "distance between 2 legs at SV;R_{xy} (cm);PCA (cm)", {HistType::kTH2F, {{200, 0, 100}, {500, 0.0f, 5.f}}}},
-      {"V0/hPCA_CosPA", "distance between 2 legs at SV vs. cosPA;cosine of pointing angle;PCA (cm)", {HistType::kTH2F, {{100, 0.9, 1}, {500, 0.0f, 5.f}}}},
+      {"V0/hPCA_CosPA", "distance between 2 legs at SV vs. cosPA;cosine of pointing angle;PCA (cm)", {HistType::kTH2F, {{100, 0.99, 1}, {500, 0.0f, 5.f}}}},
       {"V0/hDCAxyz", "DCA to PV;DCA_{xy} (cm);DCA_{z} (cm)", {HistType::kTH2F, {{200, -5.f, +5.f}, {200, -5.f, +5.f}}}},
       {"V0/hMeeSV_Rxy", "mee at SV vs. R_{xy};R_{xy} (cm);m_{ee} at SV (GeV/c^{2})", {HistType::kTH2F, {{200, 0.0f, 100.f}, {100, 0, 0.1f}}}},
       {"V0/hRxy_minX_ITSonly_ITSonly", "min trackiu X vs. R_{xy};trackiu X (cm);min trackiu X - R_{xy} (cm)", {HistType::kTH2F, {{100, 0.0f, 100.f}, {100, -50.0, 50.0f}}}},
@@ -165,15 +213,19 @@ struct PhotonConversionBuilder {
       {"V0/hRxy_minX_ITSTPC_TPC", "min trackiu X vs. R_{xy};trackiu X (cm);min trackiu X - R_{xy} (cm)", {HistType::kTH2F, {{100, 0.0f, 100.f}, {100, -50.0, 50.0f}}}},
       {"V0/hRxy_minX_TPC_TPC", "min trackiu X vs. R_{xy};trackiu X (cm);min trackiu X - R_{xy} (cm)", {HistType::kTH2F, {{100, 0.0f, 100.f}, {100, -50.0, 50.0f}}}},
       {"V0/hPCA_diffX", "PCA vs. trackiu X - R_{xy};distance btween 2 legs (cm);min trackiu X - R_{xy} (cm)", {HistType::kTH2F, {{500, 0.0f, 5.f}, {100, -50.0, 50.0f}}}},
+      {"V0/hPhiV", "#phi_{V}; #phi_{V} (rad.)", {HistType::kTH1F, {{500, 0.0f, o2::constants::math::TwoPI}}}},
+      {"V0/hBDTvalueBeforeCutVsPt", "BDT response before cut vs pT; pT (GeV/c); BDT response", {HistType::kTH2F, {{1000, 0.0f, 20.0f}, {1000, 0.0f, 1.0f}}}},
+      {"V0/hBDTvalueAfterCutVsPt", "BDT response after cut vs pT; pT (GeV/c); BDT response", {HistType::kTH2F, {{1000, 0.0f, 20.0f}, {1000, 0.0f, 1.0f}}}},
       {"V0Leg/hPt", "pT of leg at SV;p_{T,e} (GeV/c)", {HistType::kTH1F, {{1000, 0.0f, 10.0f}}}},
-      {"V0Leg/hEtaPhi", "#eta vs. #varphi of leg at SV;#varphi (rad.);#eta", {HistType::kTH2F, {{72, 0.0f, 2 * M_PI}, {200, -1, +1}}}},
+      {"V0Leg/hEtaPhi", "#eta vs. #varphi of leg at SV;#varphi (rad.);#eta", {HistType::kTH2F, {{72, 0.0f, o2::constants::math::TwoPI}, {200, -1, +1}}}},
+      {"V0Leg/hRelDeltaPt", "pT resolution;p_{T} (GeV/c);#Deltap_{T}/p_{T}", {HistType::kTH2F, {{1000, 0.f, 10.f}, {100, 0, 1}}}},
       {"V0Leg/hDCAxyz", "DCA xy vs. z to PV;DCA_{xy} (cm);DCA_{z} (cm)", {HistType::kTH2F, {{200, -50.f, 50.f}, {200, -50.f, +50.f}}}},
       {"V0Leg/hdEdx_Pin", "TPC dE/dx vs. p_{in};p_{in} (GeV/c);TPC dE/dx", {HistType::kTH2F, {{1000, 0.f, 10.f}, {200, 0.f, 200.f}}}},
       {"V0Leg/hTPCNsigmaEl", "TPC dE/dx vs. p_{in};p_{in} (GeV/c);n #sigma_{e}^{TPC}", {HistType::kTH2F, {{1000, 0.f, 10.f}, {100, -5.f, +5.f}}}},
       {"V0Leg/hXZ", "track iu x vs. z;z (cm);x (cm)", {HistType::kTH2F, {{200, -100.f, 100.f}, {200, 0.f, 100.f}}}},
     }};
 
-  void init(InitContext& initContext)
+  void init(InitContext&)
   {
     mRunNumber = 0;
     d_bz = 0;
@@ -185,26 +237,74 @@ struct PhotonConversionBuilder {
     ccdb->setLocalObjectValidityChecking();
     ccdb->setFatalWhenNull(false);
 
-    if (inherit_from_emevent_photon) {
-      getTaskOptionValue(initContext, "create-emevent-photon", "applyEveSel_at_skimming", applyEveSel_at_skimming.value, true);
-    }
-
-    if (useMatCorrType == 1) {
+    if (useMatCorrType == MatCorrType::TGeo) {
       LOGF(info, "TGeo correction requested, loading geometry");
       if (!o2::base::GeometryManager::isGeometryLoaded()) {
         ccdb->get<TGeoManager>(geoPath);
       }
     }
-    if (useMatCorrType == 2) {
+    if (useMatCorrType == MatCorrType::LUT) {
       LOGF(info, "LUT correction requested, loading LUT");
       lut = o2::base::MatLayerCylSet::rectifyPtrFromFile(ccdb->get<o2::base::MatLayerCylSet>(lutPath));
     }
 
-    if (useMatCorrType == 1) {
+    if (useMatCorrType == MatCorrType::TGeo) {
       matCorr = o2::base::Propagator::MatCorrType::USEMatCorrTGeo;
     }
-    if (useMatCorrType == 2) {
+    if (useMatCorrType == MatCorrType::LUT) {
       matCorr = o2::base::Propagator::MatCorrType::USEMatCorrLUT;
+    }
+
+    if (applyPCMMl) {
+      if (use2DBinning) {
+        int binsNPt = static_cast<int>(binsPtPCMMl->size()) - 1;
+        int binsNCent = static_cast<int>(binsCentPCMMl->size()) - 1;
+        int binsN = binsNPt * binsNCent;
+        if (binsN * static_cast<int>(cutDirPCMMl->size()) != static_cast<int>(cutsPCMMlFlat->size())) {
+          LOG(fatal) << "Mismatch in number of bins and cuts provided for 2D ML application: binsN * cutDirPCMMl: " << int(binsN) * int(cutDirPCMMl->size()) << " bins vs. cutsPCMMlFlat: " << cutsPCMMlFlat->size() << " cuts";
+        }
+        if (binsN != static_cast<int>(onnxFileNames->size())) {
+          LOG(fatal) << "Mismatch in number of bins and ONNX files provided for 2D ML application: binsN " << binsN << " bins vs. onnxFileNames: " << onnxFileNames->size() << " ONNX files";
+        }
+        if (binsN != static_cast<int>(labelsBinsPCMMl->size())) {
+          LOG(fatal) << "Mismatch in number of bins and labels provided for 2D ML application: binsN:" << binsN << " bins vs. labelsBinsPCMMl: " << labelsBinsPCMMl->size() << " labels";
+        }
+        if (static_cast<int>(cutDirPCMMl->size()) != nClassesPCMMl) {
+          LOG(fatal) << "Mismatch in number of classes and cut directions provided for 2D ML application: nClassesPCMMl: " << nClassesPCMMl << " classes vs. cutDirPCMMl: " << cutDirPCMMl->size() << " cut directions";
+        }
+        if (static_cast<int>(labelsCutScoresPCMMl->size()) != nClassesPCMMl) {
+          LOG(fatal) << "Mismatch in number of labels for cut scores and number of classes provided for 2D ML application: nClassesPCMMl: " << nClassesPCMMl << " classes vs. labelsCutScoresPCMMl: " << labelsCutScoresPCMMl->size() << " labels";
+        }
+        LabeledArray<double> cutsPCMMl(cutsPCMMlFlat->data(), binsN, nClassesPCMMl, labelsBinsPCMMl, labelsCutScoresPCMMl);
+        emMlResponse.configure2D(binsPtPCMMl, binsCentPCMMl, cutsPCMMl, cutDirPCMMl, nClassesPCMMl);
+      } else {
+        int binsNPt = static_cast<int>(binsPtPCMMl->size()) - 1;
+        if (binsNPt * static_cast<int>(cutDirPCMMl->size()) != static_cast<int>(cutsPCMMlFlat->size())) {
+          LOG(fatal) << "Mismatch in number of pT bins and cuts provided for ML application: binsNPt * cutDirPCMMl:" << binsNPt * cutDirPCMMl->size() << " bins vs. cutsPCMMlFlat: " << cutsPCMMlFlat->size() << " cuts";
+        }
+        if (binsNPt != static_cast<int>(onnxFileNames->size())) {
+          LOG(fatal) << "Mismatch in number of pT bins and ONNX files provided for ML application: binsNPt " << binsNPt << " bins vs. onnxFileNames: " << onnxFileNames->size() << " ONNX files";
+        }
+        if (binsNPt != static_cast<int>(labelsBinsPCMMl->size())) {
+          LOG(fatal) << "Mismatch in number of pT bins and labels provided for ML application: binsNPt:" << binsNPt << " bins vs. labelsBinsPCMMl: " << labelsBinsPCMMl->size() << " labels";
+        }
+        if (nClassesPCMMl != static_cast<int>(cutDirPCMMl->size())) {
+          LOG(fatal) << "Mismatch in number of classes and cut directions provided for ML application: nClassesPCMMl: " << nClassesPCMMl << " classes vs. cutDirPCMMl: " << cutDirPCMMl->size() << " cut directions";
+        }
+        if (static_cast<int>(labelsCutScoresPCMMl->size()) != nClassesPCMMl) {
+          LOG(fatal) << "Mismatch in number of labels for cut scores and number of classes provided for ML application: nClassesPCMMl:" << nClassesPCMMl << " classes vs. labelsCutScoresPCMMl: " << labelsCutScoresPCMMl->size() << " labels";
+        }
+        LabeledArray<double> cutsPCMMl(cutsPCMMlFlat->data(), binsNPt, nClassesPCMMl, labelsBinsPCMMl, labelsCutScoresPCMMl);
+        emMlResponse.configure(binsPtPCMMl, cutsPCMMl, cutDirPCMMl, nClassesPCMMl);
+      }
+      if (loadModelsFromCCDB) {
+        ccdbApi.init(ccdburl);
+        emMlResponse.setModelPathsCCDB(onnxFileNames, ccdbApi, modelPathsCCDB, timestampCCDB);
+      } else {
+        emMlResponse.setModelPathsLocal(onnxFileNames);
+      }
+      emMlResponse.cacheInputFeaturesIndices(namesInputFeatures);
+      emMlResponse.init();
     }
   }
 
@@ -218,7 +318,7 @@ struct PhotonConversionBuilder {
     if (d_bz_input > -990) {
       d_bz = d_bz_input;
       o2::parameters::GRPMagField grpmag;
-      if (fabs(d_bz) > 1e-5) {
+      if (std::fabs(d_bz) > 1e-5) {
         grpmag.setL3Current(30000.f / (d_bz / 5.0f));
       }
       o2::base::Propagator::initFieldFromGRP(&grpmag);
@@ -281,6 +381,14 @@ struct PhotonConversionBuilder {
       return false;
     }
 
+    if (disableTPConlyTracks && isTPConlyTrack(track)) {
+      return false;
+    }
+
+    if (requireITShit && !track.hasITS()) {
+      return false;
+    }
+
     if (track.x() > maxX) {
       return false;
     }
@@ -320,21 +428,6 @@ struct PhotonConversionBuilder {
           return false;
         }
       }
-
-      if (isITSonlyTrack(track)) {
-        uint32_t itsClusterSizes = track.itsClusterSizes();
-        int total_cluster_size = 0, nl = 0;
-        for (unsigned int layer = 0; layer < 7; layer++) {
-          int cluster_size_per_layer = (itsClusterSizes >> (layer * 4)) & 0xf;
-          if (cluster_size_per_layer > 0) {
-            nl++;
-          }
-          total_cluster_size += cluster_size_per_layer;
-        }
-        if (static_cast<float>(total_cluster_size) / static_cast<float>(nl) * std::cos(std::atan(track.tgl())) > max_mean_its_cluster_size) {
-          return false;
-        }
-      }
     }
 
     return true;
@@ -348,10 +441,10 @@ struct PhotonConversionBuilder {
     float px = kfp.GetPx();
     float py = kfp.GetPy();
     float cospaXY = RecoDecay::dotProd(std::array{lx, ly}, std::array{px, py}) / (RecoDecay::sqrtSumOfSquares(lx, ly) * RecoDecay::sqrtSumOfSquares(px, py));
-    if (cospaXY < -1.) {
-      return -1.;
-    } else if (cospaXY > 1.) {
-      return 1.;
+    if (cospaXY < -1.f) {
+      return -1.f;
+    } else if (cospaXY > 1.f) {
+      return 1.f;
     }
     return cospaXY;
   }
@@ -367,24 +460,29 @@ struct PhotonConversionBuilder {
     float pz = kfp.GetPz();
 
     float cospaRZ = RecoDecay::dotProd(std::array{lt, lz}, std::array{pt, pz}) / (RecoDecay::sqrtSumOfSquares(lt, lz) * RecoDecay::sqrtSumOfSquares(pt, pz));
-    if (cospaRZ < -1.) {
-      return -1.;
-    } else if (cospaRZ > 1.) {
-      return 1.;
+    if (cospaRZ < -1.f) {
+      return -1.f;
+    } else if (cospaRZ > 1.f) {
+      return 1.f;
     }
     return cospaRZ;
   }
 
-  template <typename TTrack, typename TShiftedTrack, typename TKFParticle>
-  void fillTrackTable(TTrack const& track, TShiftedTrack const& shiftedtrack, TKFParticle const& kfp, float dcaXY, float dcaZ)
+  template <bool isMC, typename TTrack, typename TShiftedTrack, typename TKFParticle>
+  void fillTrackTable(TTrack const& track, TShiftedTrack const& shiftedtrack, TKFParticle const& kfp, const float dcaXY, const float dcaZ)
   {
     v0legs(track.collisionId(), track.globalIndex(), track.sign(),
            kfp.GetPx(), kfp.GetPy(), kfp.GetPz(), dcaXY, dcaZ,
            track.tpcNClsFindable(), track.tpcNClsFindableMinusFound(), track.tpcNClsFindableMinusCrossedRows(), track.tpcNClsShared(),
            track.tpcChi2NCl(), track.tpcInnerParam(), track.tpcSignal(),
            track.tpcNSigmaEl(), track.tpcNSigmaPi(),
-           track.itsClusterSizes(), track.itsChi2NCl(), track.detectorMap(),
-           shiftedtrack.getX(), shiftedtrack.getY(), shiftedtrack.getZ(), shiftedtrack.getTgl());
+           track.itsClusterSizes(), track.itsChi2NCl(), track.detectorMap());
+
+    v0legsXYZ(shiftedtrack.getX(), shiftedtrack.getY(), shiftedtrack.getZ());
+
+    if constexpr (isMC) {
+      v0legsDeDxMC(track.mcTunedTPCSignal());
+    }
   }
 
   template <bool isMC, class TBCs, class TCollisions, class TTracks, typename TV0>
@@ -394,6 +492,7 @@ struct PhotonConversionBuilder {
     const auto& pos = v0.template posTrack_as<TTracks>();
     const auto& ele = v0.template negTrack_as<TTracks>();
     const auto& collision = v0.template collision_as<TCollisions>(); // collision where this v0 belongs to.
+    // LOGF(info, "v0.collisionId() = %d, pos.collisionId() = %d, ele.collisionId() = %d", v0.collisionId(), pos.collisionId(), ele.collisionId());
 
     if (pos.sign() * ele.sign() > 0) { // reject same sign pair
       return;
@@ -421,8 +520,13 @@ struct PhotonConversionBuilder {
 
     // LOGF(info, "v0.collisionId() = %d , v0.posTrackId() = %d , v0.negTrackId() = %d", v0.collisionId(), v0.posTrackId(), v0.negTrackId());
 
+    // if(isTPConlyTrack(ele)){
+    //   // LOGF(info, "TPConly: ele.globalIndex() = %d, ele.x() = %f, ele.y() = %f, ele.z() = %f, ele.tgl() = %f, ele.alpha() = %f, ele.snp() = %f, ele.signed1Pt() = %f", ele.globalIndex(), ele.x(), ele.y(), ele.z(), ele.tgl(), ele.alpha(), ele.snp(), ele.signed1Pt());
+    //   // LOGF(info, "TPConly: ele.globalIndex() = %d, ele.cYY() = %f, ele.cZY() = %f, ele.cZZ() = %f, ele.cSnpY() = %f, ele.cSnpZ() = %f, ele.cSnpSnp() = %f, ele.cTglY() = %f, ele.cTglZ() = %f, ele.cTglSnp() = %f, ele.cTglTgl() = %f, ele.c1PtY() = %f, ele.c1PtZ() = %f, ele.c1PtSnp() = %f, ele.c1PtTgl() = %f, ele.c1Pt21Pt2() = %f", ele.globalIndex(), ele.cYY(), ele.cZY(), ele.cZZ(), ele.cSnpY(), ele.cSnpZ(), ele.cSnpSnp(), ele.cTglY(), ele.cTglZ(), ele.cTglSnp(), ele.cTglTgl(), ele.c1PtY(), ele.c1PtZ(), ele.c1PtSnp(), ele.c1PtTgl(), ele.c1Pt21Pt2());
+    // }
+
     // Calculate DCA with respect to the collision associated to the v0, not individual tracks
-    gpu::gpustd::array<float, 2> dcaInfo;
+    std::array<float, 2> dcaInfo;
 
     auto pTrack = getTrackParCov(pos);
     if (moveTPCTracks && isTPConlyTrack(pos) && !mVDriftMgr.moveTPCTrack<TBCs, TCollisions>(collision, pos, pTrack)) {
@@ -446,7 +550,7 @@ struct PhotonConversionBuilder {
     auto eledcaXY = dcaInfo[0];
     auto eledcaZ = dcaInfo[1];
 
-    if (fabs(posdcaXY) < dcapostopv || fabs(eledcaXY) < dcanegtopv) {
+    if (std::fabs(posdcaXY) < dcapostopv || std::fabs(eledcaXY) < dcanegtopv) {
       return;
     }
 
@@ -456,14 +560,14 @@ struct PhotonConversionBuilder {
     if (rxy_tmp > maxX + margin_r_tpc) {
       return;
     }
-    if (rxy_tmp < fabs(xyz[2]) * std::tan(2 * std::atan(std::exp(-max_eta_v0))) - margin_z) {
+    if (rxy_tmp < std::fabs(xyz[2]) * std::tan(2 * std::atan(std::exp(-max_eta_v0))) - margin_z) {
       return; // RZ line cut
     }
 
     KFPTrack kfp_track_pos = createKFPTrackFromTrackParCov(pTrack, pos.sign(), pos.tpcNClsFound(), pos.tpcChi2NCl());
     KFPTrack kfp_track_ele = createKFPTrackFromTrackParCov(nTrack, ele.sign(), ele.tpcNClsFound(), ele.tpcChi2NCl());
-    KFParticle kfp_pos(kfp_track_pos, -11);
-    KFParticle kfp_ele(kfp_track_ele, 11);
+    KFParticle kfp_pos(kfp_track_pos, kPositron);
+    KFParticle kfp_ele(kfp_track_ele, kElectron);
     const KFParticle* GammaDaughters[2] = {&kfp_pos, &kfp_ele};
 
     KFParticle gammaKF;
@@ -494,10 +598,10 @@ struct PhotonConversionBuilder {
     if (rxy > maxX + margin_r_tpc) {
       return;
     }
-    if (rxy < fabs(gammaKF_DecayVtx.GetZ()) * std::tan(2 * std::atan(std::exp(-max_eta_v0))) - margin_z) {
+    if (rxy < std::fabs(gammaKF_DecayVtx.GetZ()) * std::tan(2 * std::atan(std::exp(-max_eta_v0))) - margin_z) {
       return; // RZ line cut
     }
-    if (rxy < min_v0radius) {
+    if (rxy < min_v0radius || max_v0radius < rxy) {
       return;
     }
 
@@ -548,7 +652,7 @@ struct PhotonConversionBuilder {
     gammaKF_PV.SetProductionVertex(KFPV);
     float v0pt = RecoDecay::sqrtSumOfSquares(gammaKF_PV.GetPx(), gammaKF_PV.GetPy());
     float v0eta = RecoDecay::eta(std::array{gammaKF_PV.GetPx(), gammaKF_PV.GetPy(), gammaKF_PV.GetPz()});
-    float v0phi = RecoDecay::phi(gammaKF_PV.GetPx(), gammaKF_PV.GetPy()) > 0.f ? RecoDecay::phi(gammaKF_PV.GetPx(), gammaKF_PV.GetPy()) : RecoDecay::phi(gammaKF_PV.GetPx(), gammaKF_PV.GetPy()) + TMath::TwoPi();
+    float v0phi = RecoDecay::constrainAngle(RecoDecay::phi(gammaKF_PV.GetPx(), gammaKF_PV.GetPy()));
 
     // KFParticle gammaKF_DecayVtx2 = gammaKF;
     // gammaKF_DecayVtx2.SetProductionVertex(KFPV);
@@ -557,7 +661,7 @@ struct PhotonConversionBuilder {
     // LOGF(info, "gammaKF_PV.GetPy() = %f, gammaKF_DecayVtx.GetPy() = %f, gammaKF_DecayVtx2.GetPy() = %f", gammaKF_PV.GetPy(), gammaKF_DecayVtx.GetPy(), gammaKF_DecayVtx2.GetPy());
     // LOGF(info, "gammaKF_PV.GetPz() = %f, gammaKF_DecayVtx.GetPz() = %f, gammaKF_DecayVtx2.GetPz() = %f", gammaKF_PV.GetPz(), gammaKF_DecayVtx.GetPz(), gammaKF_DecayVtx2.GetPz());
 
-    if (fabs(v0eta) > max_eta_v0 || v0pt < min_pt_v0) {
+    if (std::fabs(v0eta) > max_eta_v0 || v0pt < min_pt_v0) {
       return;
     }
 
@@ -570,76 +674,93 @@ struct PhotonConversionBuilder {
     kfp_pos_DecayVtx.TransportToPoint(xyz); // Don't set Primary Vertex
     kfp_ele_DecayVtx.TransportToPoint(xyz); // Don't set Primary Vertex
 
-    float pca_kf = kfp_pos_DecayVtx.GetDistanceFromParticle(kfp_ele_DecayVtx);
+    V0PhotonCandidate v0photoncandidate(gammaKF_DecayVtx, kfp_pos_DecayVtx, kfp_ele_DecayVtx, collision, cospa_kf, d_bz);
+
     if (!ele.hasITS() && !pos.hasITS()) { // V0s with TPConly-TPConly
       if (max_r_itsmft_ss < rxy && rxy < maxX + margin_r_tpc) {
-        if (pca_kf > max_dcav0dau_tpc_inner_fc) {
+        if (v0photoncandidate.getPCA() > max_dcav0dau_tpc_inner_fc) {
           return;
         }
       } else {
-        if (pca_kf > max_dcav0dau_tpconly) {
+        if (v0photoncandidate.getPCA() > max_dcav0dau_tpconly) {
           return;
         }
       }
     } else { // V0s with ITS hits
       if (rxy < max_r_req_its) {
-        if (pca_kf > max_dcav0dau_itsibss) {
+        if (v0photoncandidate.getPCA() > max_dcav0dau_itsibss) {
           return;
         }
       } else {
-        if (pca_kf > max_dcav0dau_its) {
+        if (v0photoncandidate.getPCA() > max_dcav0dau_its) {
           return;
         }
       }
     }
 
-    float pos_pt = RecoDecay::sqrtSumOfSquares(kfp_pos_DecayVtx.GetPx(), kfp_pos_DecayVtx.GetPy());
-    float ele_pt = RecoDecay::sqrtSumOfSquares(kfp_ele_DecayVtx.GetPx(), kfp_ele_DecayVtx.GetPy());
-    if (pos_pt < min_pt_leg_at_sv || ele_pt < min_pt_leg_at_sv) {
+    if (isITSonlyTrack(pos) && v0photoncandidate.getPosPt() > maxpt_itsonly) {
       return;
     }
 
-    if (isITSonlyTrack(pos) && pos_pt > maxpt_itsonly) {
+    if (isITSonlyTrack(ele) && v0photoncandidate.getElePt() > maxpt_itsonly) {
       return;
     }
 
-    if (isITSonlyTrack(ele) && ele_pt > maxpt_itsonly) {
+    if (v0photoncandidate.getChi2NDF() > 6e+3) { // protection for uint16.
       return;
     }
 
-    // calculate DCAxy,z to PV
-    float v0mom = RecoDecay::sqrtSumOfSquares(gammaKF_DecayVtx.GetPx(), gammaKF_DecayVtx.GetPy(), gammaKF_DecayVtx.GetPz());
-    float length = RecoDecay::sqrtSumOfSquares(gammaKF_DecayVtx.GetX() - collision.posX(), gammaKF_DecayVtx.GetY() - collision.posY(), gammaKF_DecayVtx.GetZ() - collision.posZ());
-    float dca_x_v0_to_pv = (gammaKF_DecayVtx.GetX() - gammaKF_DecayVtx.GetPx() * cospa_kf * length / v0mom) - collision.posX();
-    float dca_y_v0_to_pv = (gammaKF_DecayVtx.GetY() - gammaKF_DecayVtx.GetPy() * cospa_kf * length / v0mom) - collision.posY();
-    float dca_z_v0_to_pv = (gammaKF_DecayVtx.GetZ() - gammaKF_DecayVtx.GetPz() * cospa_kf * length / v0mom) - collision.posZ();
-    float sign_tmp = dca_x_v0_to_pv * dca_y_v0_to_pv > 0 ? +1.f : -1.f;
-    float dca_xy_v0_to_pv = RecoDecay::sqrtSumOfSquares(dca_x_v0_to_pv, dca_y_v0_to_pv) * sign_tmp;
-    if (abs(dca_xy_v0_to_pv) > max_dcatopv_xy_v0 || abs(dca_z_v0_to_pv) > max_dcatopv_z_v0) {
+    if (std::fabs(v0photoncandidate.getDcaXYToPV()) > max_dcatopv_xy_v0 || std::fabs(v0photoncandidate.getDcaZToPV()) > max_dcatopv_z_v0) {
       return;
     }
 
-    float alpha = v0_alpha(kfp_pos_DecayVtx.GetPx(), kfp_pos_DecayVtx.GetPy(), kfp_pos_DecayVtx.GetPz(), kfp_ele_DecayVtx.GetPx(), kfp_ele_DecayVtx.GetPy(), kfp_ele_DecayVtx.GetPz());
-    float qt = v0_qt(kfp_pos_DecayVtx.GetPx(), kfp_pos_DecayVtx.GetPy(), kfp_pos_DecayVtx.GetPz(), kfp_ele_DecayVtx.GetPx(), kfp_ele_DecayVtx.GetPy(), kfp_ele_DecayVtx.GetPz());
-    if (!checkAP(alpha, qt, max_alpha_ap, max_qt_ap)) { // store only photon conversions
+    if (!checkAP(v0photoncandidate.getAlpha(), v0photoncandidate.getQt(), max_alpha_ap, max_qt_ap)) { // store only photon conversions
       return;
     }
-    pca_map[std::make_tuple(v0.globalIndex(), collision.globalIndex(), pos.globalIndex(), ele.globalIndex())] = pca_kf;
-    cospa_map[std::make_tuple(v0.globalIndex(), collision.globalIndex(), pos.globalIndex(), ele.globalIndex())] = cospa_kf;
+    pca_map[std::make_tuple(v0.globalIndex(), collision.globalIndex(), pos.globalIndex(), ele.globalIndex())] = v0photoncandidate.getPCA();
+    cospa_map[std::make_tuple(v0.globalIndex(), collision.globalIndex(), pos.globalIndex(), ele.globalIndex())] = v0photoncandidate.getCosPA();
+
+    if (applyPCMMl) {
+      bool isSelectedML = false;
+      std::vector<float> mlInputFeatures = emMlResponse.getInputFeatures(v0photoncandidate, pos, ele);
+      if (use2DBinning) {
+        if (std::string(centTypePCMMl) == "CentFT0C") {
+          isSelectedML = emMlResponse.isSelectedMl(mlInputFeatures, v0photoncandidate.getPt(), v0photoncandidate.getCentFT0C(), outputML);
+        } else if (std::string(centTypePCMMl) == "CentFT0A") {
+          isSelectedML = emMlResponse.isSelectedMl(mlInputFeatures, v0photoncandidate.getPt(), v0photoncandidate.getCentFT0A(), outputML);
+        } else if (std::string(centTypePCMMl) == "CentFT0M") {
+          isSelectedML = emMlResponse.isSelectedMl(mlInputFeatures, v0photoncandidate.getPt(), v0photoncandidate.getCentFT0M(), outputML);
+        } else {
+          LOG(fatal) << "Unsupported centTypePCMMl: " << centTypePCMMl << " , please choose from CentFT0C, CentFT0A, CentFT0M.";
+        }
+      } else {
+        isSelectedML = emMlResponse.isSelectedMl(mlInputFeatures, v0photoncandidate.getPt(), outputML);
+      }
+      if (filltable) {
+        registry.fill(HIST("V0/hBDTvalueBeforeCutVsPt"), v0photoncandidate.getPt(), outputML[0]);
+      }
+      if (!isSelectedML) {
+        return;
+      }
+      if (filltable) {
+        registry.fill(HIST("V0/hBDTvalueAfterCutVsPt"), v0photoncandidate.getPt(), outputML[0]);
+      }
+    }
 
     if (filltable) {
-      registry.fill(HIST("V0/hAP"), alpha, qt);
+      registry.fill(HIST("V0/hAP"), v0photoncandidate.getAlpha(), v0photoncandidate.getQt());
       registry.fill(HIST("V0/hConversionPointXY"), gammaKF_DecayVtx.GetX(), gammaKF_DecayVtx.GetY());
       registry.fill(HIST("V0/hConversionPointRZ"), gammaKF_DecayVtx.GetZ(), rxy);
-      registry.fill(HIST("V0/hPt"), v0pt);
+      registry.fill(HIST("V0/hPt"), v0photoncandidate.getPt());
       registry.fill(HIST("V0/hEtaPhi"), v0phi, v0eta);
-      registry.fill(HIST("V0/hCosPA"), cospa_kf);
-      registry.fill(HIST("V0/hCosPA_Rxy"), rxy, cospa_kf);
-      registry.fill(HIST("V0/hPCA"), pca_kf);
-      registry.fill(HIST("V0/hPCA_CosPA"), cospa_kf, pca_kf);
-      registry.fill(HIST("V0/hPCA_Rxy"), rxy, pca_kf);
-      registry.fill(HIST("V0/hDCAxyz"), dca_xy_v0_to_pv, dca_z_v0_to_pv);
-      registry.fill(HIST("V0/hPCA_diffX"), pca_kf, std::min(pTrack.getX(), nTrack.getX()) - rxy); // trackiu.x() - rxy should be positive
+      registry.fill(HIST("V0/hCosPA"), v0photoncandidate.getCosPA());
+      registry.fill(HIST("V0/hCosPA_Rxy"), rxy, v0photoncandidate.getCosPA());
+      registry.fill(HIST("V0/hPCA"), v0photoncandidate.getPCA());
+      registry.fill(HIST("V0/hPCA_CosPA"), v0photoncandidate.getCosPA(), v0photoncandidate.getPCA());
+      registry.fill(HIST("V0/hPCA_Rxy"), rxy, v0photoncandidate.getPCA());
+      registry.fill(HIST("V0/hDCAxyz"), v0photoncandidate.getDcaXYToPV(), v0photoncandidate.getDcaZToPV());
+      registry.fill(HIST("V0/hPCA_diffX"), v0photoncandidate.getPCA(), std::min(pTrack.getX(), nTrack.getX()) - rxy); // trackiu.x() - rxy should be positive
+      registry.fill(HIST("V0/hPhiV"), v0photoncandidate.getPhiV());
 
       float cospaXY_kf = cospaXY_KF(gammaKF_DecayVtx, KFPV);
       float cospaRZ_kf = cospaRZ_KF(gammaKF_DecayVtx, KFPV);
@@ -647,21 +768,21 @@ struct PhotonConversionBuilder {
       registry.fill(HIST("V0/hCosPAXY_Rxy"), rxy, cospaXY_kf);
       registry.fill(HIST("V0/hCosPARZ_Rxy"), rxy, cospaRZ_kf);
 
-      float chi2kf = gammaKF_DecayVtx.GetChi2() / gammaKF_DecayVtx.GetNDF();
-
-      for (auto& leg : {kfp_pos_DecayVtx, kfp_ele_DecayVtx}) {
+      for (const auto& leg : {kfp_pos_DecayVtx, kfp_ele_DecayVtx}) {
         float legpt = RecoDecay::sqrtSumOfSquares(leg.GetPx(), leg.GetPy());
         float legeta = RecoDecay::eta(std::array{leg.GetPx(), leg.GetPy(), leg.GetPz()});
-        float legphi = RecoDecay::phi(leg.GetPx(), leg.GetPy()) > 0.f ? RecoDecay::phi(leg.GetPx(), leg.GetPy()) : RecoDecay::phi(leg.GetPx(), leg.GetPy()) + TMath::TwoPi();
+        float legphi = RecoDecay::constrainAngle(RecoDecay::phi(leg.GetPx(), leg.GetPy()));
         registry.fill(HIST("V0Leg/hPt"), legpt);
         registry.fill(HIST("V0Leg/hEtaPhi"), legphi, legeta);
       } // end of leg loop
-      for (auto& leg : {pos, ele}) {
+      for (const auto& leg : {pos, ele}) {
         registry.fill(HIST("V0Leg/hdEdx_Pin"), leg.tpcInnerParam(), leg.tpcSignal());
         registry.fill(HIST("V0Leg/hTPCNsigmaEl"), leg.tpcInnerParam(), leg.tpcNSigmaEl());
       } // end of leg loop
-      registry.fill(HIST("V0Leg/hXZ"), pTrack.getZ(), pTrack.getX());
-      registry.fill(HIST("V0Leg/hXZ"), nTrack.getZ(), nTrack.getX());
+      for (const auto& leg : {pTrack, nTrack}) {
+        registry.fill(HIST("V0Leg/hXZ"), leg.getZ(), leg.getX());
+        registry.fill(HIST("V0Leg/hRelDeltaPt"), leg.getPt(), leg.getPt() * std::sqrt(leg.getSigma1Pt2()));
+      } // end of leg loop
       registry.fill(HIST("V0Leg/hDCAxyz"), posdcaXY, posdcaZ);
       registry.fill(HIST("V0Leg/hDCAxyz"), eledcaXY, eledcaZ);
 
@@ -673,13 +794,15 @@ struct PhotonConversionBuilder {
       v0photonskf(collision.globalIndex(), v0.globalIndex(), v0legs.lastIndex() + 1, v0legs.lastIndex() + 2,
                   gammaKF_DecayVtx.GetX(), gammaKF_DecayVtx.GetY(), gammaKF_DecayVtx.GetZ(),
                   gammaKF_PV.GetPx(), gammaKF_PV.GetPy(), gammaKF_PV.GetPz(),
-                  v0_sv.M(), dca_xy_v0_to_pv, dca_z_v0_to_pv,
-                  cospa_kf, pca_kf, alpha, qt, chi2kf);
+                  v0_sv.M(), v0photoncandidate.getDcaXYToPV(), v0photoncandidate.getDcaZToPV(),
+                  cospa_kf, cospaXY_kf, cospaRZ_kf,
+                  v0photoncandidate.getPCA(), v0photoncandidate.getAlpha(), v0photoncandidate.getQt(), v0photoncandidate.getChi2NDF());
+      v0photonsphiv(v0photoncandidate.getPhiV());
 
-      v0photonskfcov(gammaKF_PV.GetCovariance(9), gammaKF_PV.GetCovariance(14), gammaKF_PV.GetCovariance(20), gammaKF_PV.GetCovariance(13), gammaKF_PV.GetCovariance(19), gammaKF_PV.GetCovariance(18));
+      // v0photonskfcov(gammaKF_PV.GetCovariance(9), gammaKF_PV.GetCovariance(14), gammaKF_PV.GetCovariance(20), gammaKF_PV.GetCovariance(13), gammaKF_PV.GetCovariance(19), gammaKF_PV.GetCovariance(18));
 
-      fillTrackTable(pos, pTrack, kfp_pos_DecayVtx, posdcaXY, posdcaZ); // positive leg first
-      fillTrackTable(ele, nTrack, kfp_ele_DecayVtx, eledcaXY, eledcaZ); // negative leg second
+      fillTrackTable<isMC>(pos, pTrack, kfp_pos_DecayVtx, posdcaXY, posdcaZ); // positive leg first
+      fillTrackTable<isMC>(ele, nTrack, kfp_ele_DecayVtx, eledcaXY, eledcaZ); // negative leg second
     } // end of fill table
   }
 
@@ -700,10 +823,8 @@ struct PhotonConversionBuilder {
         }
       }
 
-      if constexpr (enableFilter) {
-        if (!collision.isSelected()) {
-          continue;
-        }
+      if (!collision.isSelected()) {
+        continue;
       }
 
       if constexpr (isTriggerAnalysis) {
@@ -714,13 +835,9 @@ struct PhotonConversionBuilder {
 
       nv0_map[collision.globalIndex()] = 0;
 
-      const auto& bc = collision.template bc_as<aod::BCsWithTimestamps>();
+      const auto& bc = collision.template foundBC_as<aod::BCsWithTimestamps>();
       initCCDB(bc);
       registry.fill(HIST("hCollisionCounter"), 1);
-
-      if (applyEveSel_at_skimming && (!collision.selection_bit(o2::aod::evsel::kIsTriggerTVX) || !collision.selection_bit(o2::aod::evsel::kNoTimeFrameBorder) || !collision.selection_bit(o2::aod::evsel::kNoITSROFrameBorder))) {
-        continue;
-      }
 
       updateCCDB(bc); // delay update until is needed
 
@@ -787,7 +904,7 @@ struct PhotonConversionBuilder {
     } // end of pca_map loop
     // LOGF(info, "pca_map.size() = %d", pca_map.size());
 
-    for (auto& fullv0Id : stored_fullv0Ids) {
+    for (const auto& fullv0Id : stored_fullv0Ids) {
       auto v0Id = std::get<0>(fullv0Id);
       // auto collisionId = std::get<1>(fullv0Id);
       // auto posId = std::get<2>(fullv0Id);
@@ -806,13 +923,13 @@ struct PhotonConversionBuilder {
       fillV0Table<isMC, TBCs, TCollisions, TTracks>(v0, true);
     } // end of fullv0Id loop
 
-    for (auto& collision : collisions) {
+    for (const auto& collision : collisions) {
       if constexpr (isMC) {
         if (!collision.has_mcCollision()) {
           continue;
         }
       }
-      events_ngpcm(nv0_map[collision.globalIndex()]);
+      // events_ngpcm(nv0_map[collision.globalIndex()]);
     } // end of collision loop
 
     pca_map.clear();
@@ -846,13 +963,13 @@ struct PhotonConversionBuilder {
   }
   PROCESS_SWITCH(PhotonConversionBuilder, processMC, "process reconstructed info for MC", false);
 
-  void processRec_OnlyIfDielectron(soa::Join<MyCollisions, aod::EMEvSels, aod::EMEventsNee> const& collisions, filteredV0s const& v0s, MyTracksIU const& tracks, aod::BCsWithTimestamps const& bcs)
+  void processRec_OnlyIfDielectron(soa::Join<MyCollisions, aod::EMEventsNee> const& collisions, filteredV0s const& v0s, MyTracksIU const& tracks, aod::BCsWithTimestamps const& bcs)
   {
     build<false, false, true>(collisions, v0s, tracks, bcs);
   }
   PROCESS_SWITCH(PhotonConversionBuilder, processRec_OnlyIfDielectron, "process reconstructed info for data", false);
 
-  void processRec_SWT_OnlyIfDielectron(soa::Join<MyCollisionsWithSWT, aod::EMEvSels, aod::EMEventsNee> const& collisions, filteredV0s const& v0s, MyTracksIU const& tracks, aod::BCsWithTimestamps const& bcs)
+  void processRec_SWT_OnlyIfDielectron(soa::Join<MyCollisionsWithSWT, aod::EMEventsNee> const& collisions, filteredV0s const& v0s, MyTracksIU const& tracks, aod::BCsWithTimestamps const& bcs)
   {
     build<false, true, true>(collisions, v0s, tracks, bcs);
   }

@@ -54,6 +54,8 @@ o2physics_add_dpl_workflow(udtutorial-07
                            PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore
                            COMPONENT_NAME Analysis)
 
-
-
+o2physics_add_dpl_workflow(udtutorial-08
+                           SOURCES UDTutorial_08.cxx
+                           PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2Physics::SGCutParHolder
+                           COMPONENT_NAME Analysis)
 

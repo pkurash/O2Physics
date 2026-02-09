@@ -15,19 +15,27 @@
 /// \author Rutuparna Rath <rrath@cern.ch>, INFN BOLOGNA and GSI Darmstadt
 /// In collaboration with Andrea Alici <aalici@cern.ch>, INFN BOLOGNA
 
-#include <vector>
-
-#include "CommonConstants/PhysicsConstants.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/runDataProcessing.h"
-
-#include "Common/Core/TrackSelection.h"
-#include "Common/Core/trackUtilities.h"
-#include "Common/Core/TrackSelectionDefaults.h"
-
 #include "PWGHF/Core/HfHelper.h"
+#include "PWGHF/Core/SelectorCuts.h"
+#include "PWGHF/DataModel/AliasTables.h"
 #include "PWGHF/DataModel/CandidateReconstructionTables.h"
 #include "PWGHF/DataModel/CandidateSelectionTables.h"
+
+#include <CommonConstants/PhysicsConstants.h>
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Configurable.h>
+#include <Framework/HistogramRegistry.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/runDataProcessing.h>
+
+#include <TH1.h>
+
+#include <cstdint>
+#include <vector>
 
 using namespace o2;
 using namespace o2::analysis;
@@ -78,30 +86,29 @@ struct HfCandidateCreatorSigmac0plusplusCascade {
   Preslice<TracksWithPID> trackIndicesPerCollision = aod::track::collisionId;
 
   HistogramRegistry registry;
-  HfHelper hfHelper;
 
   void init(InitContext&)
   {
     // axes
-    AxisSpec axisBinsPt = {binsPt, "#it{p}_{T} (GeV/#it{c})"};
-    AxisSpec axisPt = {300, 0.0f, 30.0f, "#it{p}_{T} (GeV/#it{c})"};
-    AxisSpec axisEta = {500, -2.0f, 2.0f, "#it{#eta}"};
-    AxisSpec axisPhi = {100, 0.f, 6.3f, "#it{#phi}"};
-    AxisSpec axisMassCand = {600, 1.98f, 2.58f, "inv. mass (p K_{S}^{0}) (GeV/#it{c}^{2})"};
-    AxisSpec axisd0 = {500, -0.5f, 0.5f, "DCAxy (cm)"};
-    AxisSpec axisd0V0Daughters = {1000, -5.0f, 5.0f, "DCAxy (cm)"};
-    AxisSpec axisV0CPA = {500, 0.98f, 1.0001f, "v0 cos pointing angle"};
-    AxisSpec axisV0Radius = {1000, 0.f, 40.f, "V0 radius (cm)"};
-    AxisSpec axisV0DCADaughters = {200, 0.f, 2.f, "DCA (cm)"};
-    AxisSpec axisMassK0Short = {500, 0.4f, 0.6f, "#it{m}(K_{S}^{0}) (GeV/#it{c}^{2})"};
-    AxisSpec axisMassLambda = {500, 1.0f, 1.2f, "#it{m}(#Lambda) (GeV/#it{c}^{2})"};
-    AxisSpec axisMassGamma = {500, 0.0f, 0.4f, "#it{m}(#gamma) (GeV/#it{c}^{2})"};
-    AxisSpec axisCPACand = {110, -1.1f, 1.1f, "candiate cos pointing angle"};
-    AxisSpec axisDecLength = {200, 0.f, 2.0f, "decay length (cm)"};
-    AxisSpec axisProperLifetime = {100, 0.f, 0.2f, "#it{c#tau} (cm)"};
-    AxisSpec axisProperLifetimeV0 = {1000, 0.f, 80.f, "#it{c#tau} (cm)"};
-    AxisSpec axisNSigma = {100, -6.f, 6.f, "n#it{#sigma}_{p}"};
-    AxisSpec axisPidP = {100, 0.f, 10.0f, "#it{p} (GeV/#it{c})"};
+    AxisSpec const axisBinsPt = {binsPt, "#it{p}_{T} (GeV/#it{c})"};
+    AxisSpec const axisPt = {300, 0.0f, 30.0f, "#it{p}_{T} (GeV/#it{c})"};
+    AxisSpec const axisEta = {500, -2.0f, 2.0f, "#it{#eta}"};
+    AxisSpec const axisPhi = {100, 0.f, 6.3f, "#it{#phi}"};
+    AxisSpec const axisMassCand = {600, 1.98f, 2.58f, "inv. mass (p K_{S}^{0}) (GeV/#it{c}^{2})"};
+    AxisSpec const axisd0 = {500, -0.5f, 0.5f, "DCAxy (cm)"};
+    AxisSpec const axisd0V0Daughters = {1000, -5.0f, 5.0f, "DCAxy (cm)"};
+    AxisSpec const axisV0CPA = {500, 0.98f, 1.0001f, "v0 cos pointing angle"};
+    AxisSpec const axisV0Radius = {1000, 0.f, 40.f, "V0 radius (cm)"};
+    AxisSpec const axisV0DCADaughters = {200, 0.f, 2.f, "DCA (cm)"};
+    AxisSpec const axisMassK0Short = {500, 0.4f, 0.6f, "#it{m}(K_{S}^{0}) (GeV/#it{c}^{2})"};
+    AxisSpec const axisMassLambda = {500, 1.0f, 1.2f, "#it{m}(#Lambda) (GeV/#it{c}^{2})"};
+    AxisSpec const axisMassGamma = {500, 0.0f, 0.4f, "#it{m}(#gamma) (GeV/#it{c}^{2})"};
+    AxisSpec const axisCPACand = {110, -1.1f, 1.1f, "candiate cos pointing angle"};
+    AxisSpec const axisDecLength = {200, 0.f, 2.0f, "decay length (cm)"};
+    AxisSpec const axisProperLifetime = {100, 0.f, 0.2f, "#it{c#tau} (cm)"};
+    AxisSpec const axisProperLifetimeV0 = {1000, 0.f, 80.f, "#it{c#tau} (cm)"};
+    AxisSpec const axisNSigma = {100, -6.f, 6.f, "n#it{#sigma}_{p}"};
+    AxisSpec const axisPidP = {100, 0.f, 10.0f, "#it{p} (GeV/#it{c})"};
 
     auto h = registry.add<TH1>("candidateStat", "", kTH1D, {{3, 0.5, 3.5}});
     h->GetXaxis()->SetBinLabel(1, "Lc candidates");
@@ -171,24 +178,33 @@ struct HfCandidateCreatorSigmac0plusplusCascade {
   template <typename TrackType>
   bool isTrackSelected(const TrackType& track)
   {
-    if (track.pt() < trkMinPt)
+    if (track.pt() < trkMinPt) {
       return false;
-    if (std::abs(track.eta()) > trkMaxEta)
+    }
+    if (std::abs(track.eta()) > trkMaxEta) {
       return false;
-    if (std::abs(track.dcaXY()) > maxDCAxyToPVcut)
+    }
+    if (std::abs(track.dcaXY()) > maxDCAxyToPVcut) {
       return false;
-    if (std::abs(track.dcaZ()) > maxDCAzToPVcut)
+    }
+    if (std::abs(track.dcaZ()) > maxDCAzToPVcut) {
       return false;
-    if (track.tpcNClsFound() < nTpcNClsFound)
+    }
+    if (track.tpcNClsFound() < nTpcNClsFound) {
       return false;
-    if (track.tpcNClsCrossedRows() < nTPCCrossedRows)
+    }
+    if (track.tpcNClsCrossedRows() < nTPCCrossedRows) {
       return false;
-    if (track.tpcChi2NCl() > nTPCChi2)
+    }
+    if (track.tpcChi2NCl() > nTPCChi2) {
       return false;
-    if (track.itsChi2NCl() > nITSChi2)
+    }
+    if (track.itsChi2NCl() > nITSChi2) {
       return false;
-    if (track.tpcNSigmaPi() > tpcnSigmaPi)
+    }
+    if (track.tpcNSigmaPi() > tpcnSigmaPi) {
       return false;
+    }
 
     return true;
   }
@@ -210,7 +226,7 @@ struct HfCandidateCreatorSigmac0plusplusCascade {
       auto ptCand = candidateLc.pt();
       auto eta = candidateLc.eta();
       auto phi = candidateLc.phi();
-      auto invMassLcToK0sP = hfHelper.invMassLcToK0sP(candidateLc);
+      auto invMassLcToK0sP = HfHelper::invMassLcToK0sP(candidateLc);
       auto ptProng0 = candidateLc.ptProng0();
       auto ptProng1 = candidateLc.ptProng1();
       auto impactParameter0 = candidateLc.impactParameter0();
@@ -226,13 +242,13 @@ struct HfCandidateCreatorSigmac0plusplusCascade {
       auto mLambda = candidateLc.mLambda();
       auto mAntiLambda = candidateLc.mAntiLambda();
       auto mGamma = candidateLc.mGamma();
-      auto ctV0K0Short = hfHelper.ctV0K0s(candidateLc);
-      auto ctV0Lambda = hfHelper.ctV0Lambda(candidateLc);
+      auto ctV0K0Short = HfHelper::ctV0K0s(candidateLc);
+      auto ctV0Lambda = HfHelper::ctV0Lambda(candidateLc);
       auto cpa = candidateLc.cpa();
       auto cpaXY = candidateLc.cpaXY();
       auto decayLength = candidateLc.decayLength();
       auto decayLengthXY = candidateLc.decayLengthXY();
-      auto ctLc = hfHelper.ctLc(candidateLc);
+      auto ctLc = HfHelper::ctLc(candidateLc);
       if (addQA) {
         registry.fill(HIST("lc/hPtCand"), ptCand);
         registry.fill(HIST("lc/hEtaCand"), eta);
@@ -290,9 +306,9 @@ struct HfCandidateCreatorSigmac0plusplusCascade {
         continue;
       }
       registry.fill(HIST("candidateStat"), 1);
-      auto K0short = candidateLc.v0_as<o2::aod::V0s>(); // get the soft pions for the given collId
-      auto pos = K0short.template posTrack_as<TracksWithPID>();
-      auto neg = K0short.template negTrack_as<TracksWithPID>();
+      auto k0Short = candidateLc.v0_as<o2::aod::V0s>(); // get the soft pions for the given collId
+      auto pos = k0Short.template posTrack_as<TracksWithPID>();
+      auto neg = k0Short.template negTrack_as<TracksWithPID>();
       for (const auto& trackSoftPi : tracksInThisCollision) {
         int chargeSoftPi = trackSoftPi.sign();
         if (chargeSoftPi == pos.sign() && trackSoftPi.globalIndex() == pos.globalIndex()) {

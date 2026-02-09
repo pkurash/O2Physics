@@ -1,4 +1,4 @@
-// Copyright 2019-2022 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2025 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -16,10 +16,12 @@
 #ifndef PWGCF_FEMTODREAM_CORE_FEMTODREAMUTILS_H_
 #define PWGCF_FEMTODREAM_CORE_FEMTODREAMUTILS_H_
 
-#include <vector>
-#include <string>
-#include "CommonConstants/PhysicsConstants.h"
 #include "PWGCF/DataModel/FemtoDerived.h"
+
+#include "CommonConstants/PhysicsConstants.h"
+
+#include <string>
+#include <vector>
 
 namespace o2::analysis::femtoDream
 {
@@ -52,6 +54,18 @@ inline float getMass(int pdgCode)
     case o2::constants::physics::Pdg::kPhi:
       mass = o2::constants::physics::MassPhi;
       break;
+    case o2::constants::physics::Pdg::kD0:
+      mass = o2::constants::physics::MassD0;
+      break;
+    case o2::constants::physics::Pdg::kDStar:
+      mass = o2::constants::physics::MassDStar;
+      break;
+    case o2::constants::physics::Pdg::kDPlus:
+      mass = o2::constants::physics::MassDPlus;
+      break;
+    case o2::constants::physics::Pdg::kDS:
+      mass = o2::constants::physics::MassDS;
+      break;
     case o2::constants::physics::Pdg::kLambdaCPlus:
       mass = o2::constants::physics::MassLambdaCPlus;
       break;
@@ -64,8 +78,18 @@ inline float getMass(int pdgCode)
     case o2::constants::physics::Pdg::kHelium3:
       mass = o2::constants::physics::MassHelium3;
       break;
+    // case o2::constants::physics::Pdg::kOmegaMinus:
+    case kOmegaMinus:
+      mass = o2::constants::physics::MassOmegaMinus;
+      break;
+    case o2::constants::physics::Pdg::kK0Star892:
+      mass = o2::constants::physics::MassK0Star892;
+      break;
+    case 310: /// K0Short is not implemented in o2::physics::constants::Pdg
+      mass = o2::constants::physics::MassK0Short;
+      break;
     default:
-      LOG(fatal) << "PDG code is not suppored";
+      LOG(fatal) << "PDG code is not supported";
   }
   return mass;
 }
@@ -74,7 +98,7 @@ inline int checkDaughterType(o2::aod::femtodreamparticle::ParticleType partType,
 {
   int partOrigin = 0;
   if (partType == o2::aod::femtodreamparticle::ParticleType::kTrack) {
-    switch (abs(motherPDG)) {
+    switch (std::abs(motherPDG)) {
       case kLambda0:
         partOrigin = aod::femtodreamMCparticle::ParticleOriginMCTruth::kSecondaryDaughterLambda;
         break;
@@ -86,7 +110,7 @@ inline int checkDaughterType(o2::aod::femtodreamparticle::ParticleType partType,
     } // switch
 
   } else if (partType == o2::aod::femtodreamparticle::ParticleType::kV0) {
-    switch (abs(motherPDG)) {
+    switch (std::abs(motherPDG)) {
       case kSigma0:
         partOrigin = aod::femtodreamMCparticle::ParticleOriginMCTruth::kSecondaryDaughterSigma0;
         break;
@@ -100,7 +124,7 @@ inline int checkDaughterType(o2::aod::femtodreamparticle::ParticleType partType,
         partOrigin = aod::femtodreamMCparticle::ParticleOriginMCTruth::kSecondary;
     }
 
-  } else if (partType == o2::aod::femtodreamparticle::ParticleType::kV0Child) {
+  } else if (partType == o2::aod::femtodreamparticle::ParticleType::kV0Child || partType == o2::aod::femtodreamparticle::ParticleType::kCascadeV0Child || partType == o2::aod::femtodreamparticle::ParticleType::kCascadeBachelor) {
     switch (abs(motherPDG)) {
       case kLambda0:
         partOrigin = aod::femtodreamMCparticle::ParticleOriginMCTruth::kSecondaryDaughterLambda;
@@ -113,9 +137,19 @@ inline int checkDaughterType(o2::aod::femtodreamparticle::ParticleType partType,
     } // switch
 
   } else if (partType == o2::aod::femtodreamparticle::ParticleType::kCascade) {
-    partOrigin = aod::femtodreamMCparticle::ParticleOriginMCTruth::kSecondary;
-  } else if (partType == o2::aod::femtodreamparticle::ParticleType::kCascadeBachelor) {
-    partOrigin = aod::femtodreamMCparticle::ParticleOriginMCTruth::kSecondary;
+    switch (std::abs(motherPDG)) {
+      case kOmegaMinus:
+        partOrigin = aod::femtodreamMCparticle::ParticleOriginMCTruth::kSecondaryDaughterOmegaMinus;
+        break;
+      case 3324:
+        partOrigin = aod::femtodreamMCparticle::ParticleOriginMCTruth::kSecondaryDaughterXistar0;
+        break;
+      case 3314:
+        partOrigin = aod::femtodreamMCparticle::ParticleOriginMCTruth::kSecondaryDaughterXistarMinus;
+        break;
+      default:
+        partOrigin = aod::femtodreamMCparticle::ParticleOriginMCTruth::kSecondary;
+    }
   }
   return partOrigin;
 };

@@ -14,18 +14,26 @@
 ///
 /// \author Panos Christakoglou <panos.christakoglou@cern.ch>, Nikhef
 
-#include <vector>
-
-#include "CommonConstants/PhysicsConstants.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/runDataProcessing.h"
-
-#include "Common/Core/TrackSelectorPID.h"
-
 #include "PWGHF/Core/HfHelper.h"
 #include "PWGHF/Core/SelectorCuts.h"
+#include "PWGHF/DataModel/AliasTables.h"
 #include "PWGHF/DataModel/CandidateReconstructionTables.h"
 #include "PWGHF/DataModel/CandidateSelectionTables.h"
+
+#include "Common/DataModel/PIDResponseTPC.h"
+#include "Common/DataModel/TrackSelectionTables.h"
+
+#include <CommonConstants/PhysicsConstants.h>
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Array2D.h>
+#include <Framework/Configurable.h>
+#include <Framework/runDataProcessing.h>
+
+#include <cmath>
+#include <vector>
 
 using namespace o2;
 using namespace o2::aod;
@@ -53,20 +61,15 @@ struct HfCandidateSelectorLbToLcPi {
   Configurable<float> maxDecayLengthError{"maxDecayLengthError", 0.015, "decay length error quality selection"};
   Configurable<float> maxDecayLengthXYError{"maxDecayLengthXYError", 0.01, "decay length xy error quality selection"};
   Configurable<float> maxVertexDistanceLbLc{"maxVertexDistanceLbLc", 0.05, "maximum distance between Lb and Lc vertex"};
-  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_lb_to_lc_pi::cuts[0], hf_cuts_lb_to_lc_pi::nBinsPt, hf_cuts_lb_to_lc_pi::nCutVars, hf_cuts_lb_to_lc_pi::labelsPt, hf_cuts_lb_to_lc_pi::labelsCutVar}, "Lb0 candidate selection per pT bin"};
+  Configurable<LabeledArray<double>> cuts{"cuts", {hf_cuts_lb_to_lc_pi::Cuts[0], hf_cuts_lb_to_lc_pi::NBinsPt, hf_cuts_lb_to_lc_pi::NCutVars, hf_cuts_lb_to_lc_pi::labelsPt, hf_cuts_lb_to_lc_pi::labelsCutVar}, "Lb0 candidate selection per pT bin"};
   Configurable<int> selectionFlagLc{"selectionFlagLc", 1, "Selection Flag for Lc+"};
-
-  HfHelper hfHelper;
 
   using TracksWExt = soa::Join<o2::aod::Tracks, o2::aod::TracksExtra, aod::TrackSelection, o2::aod::TrackSelectionExtension, aod::TracksPidPi, aod::PidTpcTofFullPi, aod::TracksPidKa, aod::PidTpcTofFullKa, aod::pidTPCFullPi>;
 
   bool passesImpactParameterResolution(float pT, float d0Resolution)
   {
-    float expectedResolution(0.001 + 0.0052 * exp(-0.655 * pT));
-    if (d0Resolution > expectedResolution * 1.5)
-      return false;
-    else
-      return true;
+    float const expectedResolution(0.001 + 0.0052 * std::exp(-0.655 * pT));
+    return d0Resolution <= expectedResolution * 1.5;
   } // Compares to pT dependent cut on impact parameter resolution
 
   // Apply topological cuts as defined in SelectorCuts.h; return true if candidate passes all cuts
@@ -74,7 +77,7 @@ struct HfCandidateSelectorLbToLcPi {
   bool selectionTopol(const T1& hfCandLb, const T2& hfCandLc, const T3& trackPi)
   {
     auto candpT = hfCandLb.pt();
-    int pTBin = findBin(binsPt, candpT);
+    int const pTBin = findBin(binsPt, candpT);
     if (pTBin == -1) {
       // LOGF(debug, "Lb topol selection failed at getpTBin");
       return false;
@@ -86,7 +89,7 @@ struct HfCandidateSelectorLbToLcPi {
     }
 
     // Λb0 mass cut
-    if (std::abs(hfHelper.invMassLbToLcPi(hfCandLb) - o2::constants::physics::MassLambdaB0) > cuts->get(pTBin, "m")) {
+    if (std::abs(HfHelper::invMassLbToLcPi(hfCandLb) - o2::constants::physics::MassLambdaB0) > cuts->get(pTBin, "m")) {
       // LOGF(debug, "Lb topol selection failed at mass diff check");
       return false;
     }
@@ -102,17 +105,22 @@ struct HfCandidateSelectorLbToLcPi {
     }
 
     float lcMass = 0.;
-    if (hfCandLc.isSelLcToPKPi())
-      lcMass = hfHelper.invMassLcToPKPi(hfCandLc);
-    if (hfCandLc.isSelLcToPiKP())
-      lcMass = hfHelper.invMassLcToPiKP(hfCandLc);
-    if (std::abs(lcMass - o2::constants::physics::MassLambdaCPlus) > cuts->get(pTBin, "DeltaMLc"))
+    if (hfCandLc.isSelLcToPKPi()) {
+      lcMass = HfHelper::invMassLcToPKPi(hfCandLc);
+    }
+    if (hfCandLc.isSelLcToPiKP()) {
+      lcMass = HfHelper::invMassLcToPiKP(hfCandLc);
+    }
+    if (std::abs(lcMass - o2::constants::physics::MassLambdaCPlus) > cuts->get(pTBin, "DeltaMLc")) {
       return false;
+    }
 
-    if (hfCandLb.errorDecayLengthXY() > maxDecayLengthXYError)
+    if (hfCandLb.errorDecayLengthXY() > maxDecayLengthXYError) {
       return false;
-    if (hfCandLb.errorDecayLength() > maxDecayLengthError)
+    }
+    if (hfCandLb.errorDecayLength() > maxDecayLengthError) {
       return false;
+    }
 
     // Lb Decay length
     if (hfCandLb.decayLength() < cuts->get(pTBin, "Lb decLen")) {
@@ -146,15 +154,11 @@ struct HfCandidateSelectorLbToLcPi {
     }
 
     // distance between Lb and Lc decay
-    float diffXVert = hfCandLb.xSecondaryVertex() - hfCandLc.xSecondaryVertex();
-    float diffYVert = hfCandLb.ySecondaryVertex() - hfCandLc.ySecondaryVertex();
-    float diffZVert = hfCandLb.zSecondaryVertex() - hfCandLc.zSecondaryVertex();
-    float vertexDistance = sqrt(diffXVert * diffXVert + diffYVert * diffYVert + diffZVert * diffZVert);
-    if (vertexDistance > maxVertexDistanceLbLc) {
-      return false;
-    }
-
-    return true;
+    float const diffXVert = hfCandLb.xSecondaryVertex() - hfCandLc.xSecondaryVertex();
+    float const diffYVert = hfCandLb.ySecondaryVertex() - hfCandLc.ySecondaryVertex();
+    float const diffZVert = hfCandLb.zSecondaryVertex() - hfCandLc.zSecondaryVertex();
+    float const vertexDistance = std::sqrt(diffXVert * diffXVert + diffYVert * diffYVert + diffZVert * diffZVert);
+    return vertexDistance <= maxVertexDistanceLbLc;
   }
 
   void process(aod::HfCandLb const& hfCandLbs,
@@ -164,14 +168,6 @@ struct HfCandidateSelectorLbToLcPi {
     for (const auto& hfCandLb : hfCandLbs) { // looping over Lb candidates
 
       int statusLb = 0;
-
-      // check if flagged as Λb --> Λc+ π-
-      if (!(hfCandLb.hfflag() & 1 << hf_cand_lb::DecayType::LbToLcPi)) {
-        hfSelLbToLcPiCandidate(statusLb);
-        // LOGF(debug, "Lb candidate selection failed at hfflag check");
-        continue;
-      }
-
       // Lc is always index0 and pi is index1 by default
       // auto candLc = hfCandLb.prong0();
       auto candLc = hfCandLb.prong0_as<soa::Join<aod::HfCand3Prong, aod::HfSelLc>>();
@@ -181,9 +177,9 @@ struct HfCandidateSelectorLbToLcPi {
       auto track0 = candLc.prong0_as<TracksWExt>();
       auto track1 = candLc.prong1_as<TracksWExt>();
       auto track2 = candLc.prong2_as<TracksWExt>();
-      float reso0 = candLc.errorImpactParameter0();
-      float reso1 = candLc.errorImpactParameter1();
-      float reso2 = candLc.errorImpactParameter2();
+      float const reso0 = candLc.errorImpactParameter0();
+      float const reso1 = candLc.errorImpactParameter1();
+      float const reso2 = candLc.errorImpactParameter2();
       if (!passesImpactParameterResolution(track0.pt(), reso0) || !passesImpactParameterResolution(track1.pt(), reso1) || !passesImpactParameterResolution(track2.pt(), reso2) || !passesImpactParameterResolution(trackPi.pt(), hfCandLb.errorImpactParameter1())) {
         hfSelLbToLcPiCandidate(statusLb);
         continue;

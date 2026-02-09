@@ -31,31 +31,33 @@
 //    david.dobrigkeit.chinellato@cern.ch
 //
 
-#include "Framework/runDataProcessing.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoAHelpers.h"
-#include "ReconstructionDataFormats/Track.h"
-#include "Common/Core/RecoDecay.h"
-#include "Common/Core/trackUtilities.h"
 #include "PWGLF/DataModel/LFStrangenessTables.h"
-#include "Common/Core/TrackSelection.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "Common/DataModel/EventSelection.h"
-#include "Common/DataModel/Centrality.h"
-#include "Common/DataModel/PIDResponse.h"
 
+#include "Common/Core/RecoDecay.h"
+#include "Common/Core/TrackSelection.h"
+#include "Common/Core/trackUtilities.h"
+#include "Common/DataModel/Centrality.h"
+#include "Common/DataModel/EventSelection.h"
+#include "Common/DataModel/PIDResponseTPC.h"
+#include "Common/DataModel/TrackSelectionTables.h"
+
+#include "Framework/ASoAHelpers.h"
+#include "Framework/AnalysisDataModel.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/runDataProcessing.h"
+#include "ReconstructionDataFormats/Track.h"
+
+#include <Math/Vector4D.h>
+#include <TDatabasePDG.h>
 #include <TFile.h>
 #include <TH2F.h>
-#include <TProfile.h>
 #include <TLorentzVector.h>
-#include <Math/Vector4D.h>
 #include <TPDGCode.h>
-#include <TDatabasePDG.h>
-#include <cmath>
+#include <TProfile.h>
+
 #include <array>
+#include <cmath>
 #include <cstdlib>
-#include "Framework/ASoAHelpers.h"
 
 using namespace o2;
 using namespace o2::framework;
@@ -80,6 +82,7 @@ struct cascadeGenerated {
   Configurable<int> nPtBins{"nPtBins", 200, "number of pT bins"};
   Configurable<float> rapidityCut{"rapidityCut", 0.5, "max (absolute) rapidity of generated cascade"};
   Configurable<int> nRapidityBins{"nRapidityBins", 200, "number of pT bins"};
+  Configurable<bool> requirePhysicalPrimary{"requirePhysicalPrimary", false, "require the generated cascade to be a physical primary"};
 
   void init(InitContext const&)
   {
@@ -107,6 +110,8 @@ struct cascadeGenerated {
     // WARNING: event-level losses have to be understood too
     for (auto& particle : mcparts) {
       if (TMath::Abs(particle.y()) > rapidityCut)
+        continue;
+      if (requirePhysicalPrimary && !particle.isPhysicalPrimary())
         continue;
       if (particle.pdgCode() == 3312) {
         registry.fill(HIST("hPtXiMinus"), particle.pt());
@@ -469,7 +474,7 @@ struct cascadeAnalysisMC {
   }
   PROCESS_SWITCH(cascadeAnalysisMC, processRun2VsMultiplicity, "Process Run 2 data vs multiplicity", false);
 
-  void processRun3WithPID(soa::Join<aod::Collisions, aod::EvSels>::iterator const& collision, soa::Filtered<LabeledCascades> const& Cascades, aod::V0sLinked const&, FullTracksExtIUWithPID const&, aod::McParticles const&)
+  void processRun3WithPID(soa::Join<aod::Collisions, aod::EvSels>::iterator const& collision, soa::Filtered<LabeledCascades> const& Cascades, FullTracksExtIUWithPID const&, aod::McParticles const&)
   // process function subscribing to Run 3-like analysis objects
   {
     // Run 3 event selection criteria
@@ -484,7 +489,7 @@ struct cascadeAnalysisMC {
   }
   PROCESS_SWITCH(cascadeAnalysisMC, processRun3WithPID, "Process Run 3 data  with PID", false);
 
-  void processRun2WithPID(soa::Join<aod::Collisions, aod::EvSels>::iterator const& collision, soa::Filtered<LabeledCascades> const& Cascades, aod::V0sLinked const&, FullTracksExtWithPID const&, aod::McParticles const&)
+  void processRun2WithPID(soa::Join<aod::Collisions, aod::EvSels>::iterator const& collision, soa::Filtered<LabeledCascades> const& Cascades, FullTracksExtWithPID const&, aod::McParticles const&)
   // process function subscribing to Run 3-like analysis objects
   {
     // Run 2 event selection criteria

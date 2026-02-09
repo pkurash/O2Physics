@@ -13,7 +13,19 @@
 //
 /// \author Nima Zardoshti <nima.zardoshti@cern.ch>
 
-#include "PWGJE/JetFinders/jetFinderHF.cxx"
+#include "PWGJE/DataModel/Jet.h"
+#include "PWGJE/JetFinders/jetFinderHF.h"
+
+#include <Framework/AnalysisTask.h>
+#include <Framework/ConfigContext.h>
+#include <Framework/DataProcessorSpec.h>
+#include <Framework/runDataProcessing.h>
+
+#include <vector>
+
+using namespace o2;
+using namespace o2::framework;
+using namespace o2::framework::expressions;
 
 using JetFinderBplusDataCharged = JetFinderHFTask<aod::CandidatesBplusData, aod::CandidatesBplusMCD, aod::CandidatesBplusMCP, aod::JetTracksSubBplus, aod::JetParticlesSubBplus, aod::BplusChargedJets, aod::BplusChargedJetConstituents, aod::BplusChargedEventWiseSubtractedJets, aod::BplusChargedEventWiseSubtractedJetConstituents>;
 

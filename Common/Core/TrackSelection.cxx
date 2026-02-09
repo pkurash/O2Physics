@@ -13,8 +13,17 @@
 // Class for track selection
 //
 
-#include "Framework/Logger.h"
 #include "Common/Core/TrackSelection.h"
+
+#include <Framework/DataTypes.h>
+#include <Framework/Logger.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <functional>
+#include <set>
+#include <string>
+#include <utility>
 
 bool TrackSelection::FulfillsITSHitRequirements(uint8_t itsClusterMap) const
 {
@@ -30,7 +39,7 @@ bool TrackSelection::FulfillsITSHitRequirements(uint8_t itsClusterMap) const
   return true;
 }
 
-const std::string TrackSelection::mCutNames[static_cast<int>(TrackSelection::TrackCuts::kNCuts)] = {"TrackType", "PtRange", "EtaRange", "TPCNCls", "TPCCrossedRows", "TPCCrossedRowsOverNCls", "TPCChi2NDF", "TPCRefit", "ITSNCls", "ITSChi2NDF", "ITSRefit", "ITSHits", "GoldenChi2", "DCAxy", "DCAz"};
+const std::string TrackSelection::mCutNames[static_cast<int>(TrackSelection::TrackCuts::kNCuts)] = {"TrackType", "PtRange", "EtaRange", "TPCNCls", "TPCCrossedRows", "TPCCrossedRowsOverNCls", "TPCChi2NDF", "TPCRefit", "ITSNCls", "ITSChi2NDF", "ITSRefit", "ITSHits", "GoldenChi2", "DCAxy", "DCAz", "TPCFracSharedCls"};
 
 void TrackSelection::SetTrackType(o2::aod::track::TrackTypeEnum trackType)
 {
@@ -78,6 +87,11 @@ void TrackSelection::SetMinNCrossedRowsOverFindableClustersTPC(float minNCrossed
 {
   mMinNCrossedRowsOverFindableClustersTPC = minNCrossedRowsOverFindableClustersTPC;
   LOG(info) << "Track selection, set min N crossed rows over findable clusters TPC: " << mMinNCrossedRowsOverFindableClustersTPC;
+}
+void TrackSelection::SetMaxTPCFractionSharedCls(float maxTPCFractionSharedCls)
+{
+  mMaxTPCFractionSharedCls = maxTPCFractionSharedCls;
+  LOG(info) << "Track selection, set max fraction of shared clusters TPC: " << mMaxTPCFractionSharedCls;
 }
 void TrackSelection::SetMinNClustersITS(int minNClustersITS)
 {
@@ -162,7 +176,7 @@ void TrackSelection::print() const
         LOG(info) << mCutNames[i] << " == " << mRequireITSRefit;
         break;
       case TrackCuts::kITSHits:
-        for (auto& itsRequirement : mRequiredITSHits) {
+        for (const auto& itsRequirement : mRequiredITSHits) {
           LOG(info) << mCutNames[i] << " == " << itsRequirement.first;
         }
         break;
@@ -174,6 +188,9 @@ void TrackSelection::print() const
         break;
       case TrackCuts::kDCAz:
         LOG(info) << mCutNames[i] << " < " << mMaxDcaZ;
+        break;
+      case TrackCuts::kTPCFracSharedCls:
+        LOG(info) << mCutNames[i] << " < " << mMaxTPCFractionSharedCls;
         break;
       default:
         LOG(fatal) << "Cut unknown!";

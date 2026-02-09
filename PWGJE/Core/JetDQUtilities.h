@@ -17,31 +17,21 @@
 #ifndef PWGJE_CORE_JETDQUTILITIES_H_
 #define PWGJE_CORE_JETDQUTILITIES_H_
 
-#include <array>
-#include <vector>
-#include <string>
-#include <optional>
+#include "PWGJE/DataModel/Jet.h"
+
+#include "Common/Core/RecoDecay.h"
+
+#include <CommonConstants/PhysicsConstants.h>
+#include <Framework/ASoA.h>
 
 #include <TPDGCode.h>
 
-#include "CommonConstants/PhysicsConstants.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoA.h"
-#include "Framework/O2DatabasePDGPlugin.h"
+#include <Rtypes.h>
 
-#include "Framework/Logger.h"
-#include "Common/Core/TrackSelection.h"
-#include "Common/Core/TrackSelectionDefaults.h"
-#include "Common/DataModel/EventSelection.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-
-#include "PWGDQ/DataModel/ReducedInfoTables.h"
-
-#include "PWGJE/Core/FastJetUtilities.h"
-#include "PWGJE/Core/JetDerivedDataUtilities.h"
-#include "PWGJE/Core/JetFinder.h"
-#include "PWGJE/DataModel/Jet.h"
+#include <array>
+#include <cstdint>
+#include <string>
+#include <type_traits>
 
 namespace jetdqutilities
 {
@@ -104,10 +94,9 @@ constexpr bool isMatchedDielectronCandidate(T const& /*candidate*/)
  *
  * @param track track that is being checked
  * @param candidate Dielectron candidate that is being checked
- * @param tracks the track table
  */
-template <typename T, typename U, typename V>
-bool isDielectronDaughterTrack(T& track, U& candidate, V const& /*tracks*/)
+template <typename T, typename U>
+bool isDielectronDaughterTrack(T& track, U& candidate)
 {
   if constexpr (isDielectronCandidate<U>()) {
     if (candidate.prong0Id() == track.globalIndex() || candidate.prong1Id() == track.globalIndex()) {
@@ -165,16 +154,16 @@ auto slicedPerDielectronCandidate(T const& table, U const& candidate, V const& p
 }
 
 /**
- * returns a slice of the table depending on the type of the Dielectron candidate and index of the collision
- *
- * @param candidate dielectron candidate that is being checked
+ * returns a slice of the table depending on the index of the Dielectron jet
+ * @param DielectronTable dielectron table type
+ * @param jet jet that the slice is based on
  * @param table the table to be sliced
  */
-template <typename T, typename U, typename V, typename M>
-auto slicedPerDielectronCollision(T const& table, U const& /*candidates*/, V const& collision, M const& DielectronCollisionPerCollision)
+template <typename DielectronTable, typename T, typename U, typename V>
+auto slicedPerDielectronJet(T const& table, U const& jet, V const& perDielectronJet)
 {
-  if constexpr (isDielectronTable<U>() || isDielectronMcTable<U>()) {
-    return table.sliceBy(DielectronCollisionPerCollision, collision.globalIndex());
+  if constexpr (isDielectronTable<DielectronTable>() || isDielectronMcTable<DielectronTable>()) {
+    return table.sliceBy(perDielectronJet, jet.globalIndex());
   } else {
     return table;
   }
@@ -293,7 +282,7 @@ bool selectDielectronParticleDecay(T const& dielectronParticle, int dielectronPa
   return (dielectronParticle.decayFlag() & (1 << dielectronParticleDecaySelection));
 }
 
-int initialiseDielectronParticleDecaySelection(std::string dielectronParticleDecaySelection)
+int initialiseDielectronParticleDecaySelection(const std::string& dielectronParticleDecaySelection)
 {
   if (dielectronParticleDecaySelection == "JPsiToEE") {
     return JDielectronParticleDecays::JPsiToEE;
@@ -312,31 +301,58 @@ uint8_t setDielectronParticleDecayBit(T const& particles, U const& particle)
 }
 
 template <typename T, typename U>
-void fillDielectronCollisionTable(T const& collision, U& DielectronCollisionTable, int32_t& DielectronCollisionTableIndex)
+void fillDielectronCollisionTable(T const& collision, U& DielectronCollisionTable)
 {
   DielectronCollisionTable(collision.tag_raw(), collision.runNumber(), collision.posX(), collision.posY(), collision.posZ(), collision.numContrib(), collision.collisionTime(), collision.collisionTimeRes());
-  DielectronCollisionTableIndex = DielectronCollisionTable.lastIndex();
 }
 
 template <typename T, typename U>
-void fillDielectronMcCollisionTable(T const& mcCollision, U& DielectronMcCollisionTable, int32_t& DielectronMcCollisionTableIndex)
+void fillDielectronMcCollisionTable(T const& mcCollision, U& DielectronMcCollisionTable)
 {
   DielectronMcCollisionTable(mcCollision.posX(), mcCollision.posY(), mcCollision.posZ());
-  DielectronMcCollisionTableIndex = DielectronMcCollisionTable.lastIndex();
 }
 
-template <typename T, typename U>
-void fillDielectronCandidateTable(T const& candidate, int32_t collisionIndex, U& DielectronTable, int32_t& DielectronCandidateTableIndex)
+template <typename T, typename U, typename V>
+void fillDielectronCandidateTable(T const& candidate, int32_t collisionIndex, U& DielectronTable, V& DielectronAllTable)
 {
   DielectronTable(collisionIndex, candidate.mass(), candidate.pt(), candidate.eta(), candidate.phi(), candidate.sign(), candidate.filterMap_raw(), candidate.mcDecision());
-  DielectronCandidateTableIndex = DielectronTable.lastIndex();
+
+  DielectronAllTable(
+    candidate.mass(), candidate.pt(), candidate.eta(), candidate.phi(), candidate.sign(),
+    candidate.filterMap_raw(), candidate.mcDecision(),
+
+    candidate.pt1(), candidate.eta1(), candidate.phi1(),
+    candidate.itsClusterMap1(), candidate.itsChi2NCl1(),
+    candidate.tpcNClsCR1(), candidate.tpcNClsFound1(), candidate.tpcChi2NCl1(),
+    candidate.dcaXY1(), candidate.dcaZ1(),
+    candidate.tpcSignal1(), candidate.tpcNSigmaEl1(), candidate.tpcNSigmaPi1(), candidate.tpcNSigmaPr1(),
+    candidate.tofBeta1(), candidate.tofNSigmaEl1(), candidate.tofNSigmaPi1(), candidate.tofNSigmaPr1(),
+
+    candidate.pt2(), candidate.eta2(), candidate.phi2(),
+    candidate.itsClusterMap2(), candidate.itsChi2NCl2(),
+    candidate.tpcNClsCR2(), candidate.tpcNClsFound2(), candidate.tpcChi2NCl2(),
+    candidate.dcaXY2(), candidate.dcaZ2(),
+    candidate.tpcSignal2(), candidate.tpcNSigmaEl2(), candidate.tpcNSigmaPi2(), candidate.tpcNSigmaPr2(),
+    candidate.tofBeta2(), candidate.tofNSigmaEl2(), candidate.tofNSigmaPi2(), candidate.tofNSigmaPr2(),
+
+    candidate.dcaxyztrk0KF(), candidate.dcaxyztrk1KF(), candidate.dcaxyzbetweentrksKF(),
+    candidate.dcaxytrk0KF(), candidate.dcaxytrk1KF(), candidate.dcaxybetweentrksKF(),
+    candidate.deviationTrk0KF(), candidate.deviationTrk1KF(),
+    candidate.deviationxyTrk0KF(), candidate.deviationxyTrk1KF(),
+    candidate.massKFGeo(), candidate.chi2overndfKFGeo(),
+    candidate.decaylengthKFGeo(), candidate.decaylengthovererrKFGeo(),
+    candidate.decaylengthxyKFGeo(), candidate.decaylengthxyovererrKFGeo(),
+    candidate.pseudoproperdecaytimeKFGeo(), candidate.pseudoproperdecaytimeErrKFGeo(), candidate.cosPAKFGeo(),
+    candidate.pairDCAxyz(), candidate.pairDCAxy(),
+    candidate.deviationPairKF(), candidate.deviationxyPairKF(),
+    candidate.massKFGeoTop(), candidate.chi2overndfKFGeoTop(),
+    candidate.tauz(), candidate.tauxy(), candidate.lz(), candidate.lxy());
 }
 
 template <typename T, typename U>
-void fillDielectronCandidateMcTable(T const& candidate, int32_t mcCollisionIndex, U& DielectronMcTable, int32_t& DielectronCandidateTableIndex)
+void fillDielectronCandidateMcTable(T const& candidate, int32_t mcCollisionIndex, U& DielectronMcTable)
 {
-  DielectronMcTable(mcCollisionIndex, candidate.pt(), candidate.eta(), candidate.phi(), candidate.y(), candidate.e(), candidate.m(), candidate.pdgCode(), candidate.getGenStatusCode(), candidate.getHepMCStatusCode(), candidate.isPhysicalPrimary(), candidate.decayFlag(), candidate.origin());
-  DielectronCandidateTableIndex = DielectronMcTable.lastIndex();
+  DielectronMcTable(mcCollisionIndex, candidate.pt(), candidate.eta(), candidate.phi(), candidate.y(), candidate.e(), candidate.m(), candidate.vx(), candidate.vy(), candidate.vz(), candidate.vt(), candidate.pdgCode(), candidate.statusCode(), candidate.flags(), candidate.decayFlag(), candidate.origin());
 }
 
 }; // namespace jetdqutilities

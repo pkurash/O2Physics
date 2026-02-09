@@ -36,7 +36,7 @@ o2physics_add_dpl_workflow(dndeta-mft
 
 o2physics_add_dpl_workflow(dndeta-mft-pbpb
                     SOURCES dndetaMFTPbPb.cxx
-                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2Physics::AnalysisCCDB
                     COMPONENT_NAME Analysis)
 
 o2physics_add_dpl_workflow(flatenicity-fv0
@@ -79,3 +79,8 @@ o2physics_add_dpl_workflow(flattenicty-chrg
                   SOURCES flattenicty-chrg.cxx
                   PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
                   COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(pseudo-eff-mft
+                    SOURCES pseudoEffMFT.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2Physics::AnalysisCCDB O2::MFTBase O2::DataFormatsMFT O2::MFTTracking O2::ITSMFTSimulation O2::ITSMFTWorkflow
+                    COMPONENT_NAME Analysis)

@@ -1,4 +1,4 @@
-// Copyright 2019-2024 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2025 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -13,38 +13,44 @@
 /// \brief Task for the analysis of forward PID with MFT
 /// \author Luca Micheletti <luca.micheletti@to.infn.it>, INFN
 
-#include <iostream>
-#include <vector>
-#include <algorithm>
+#include "PWGDQ/Core/AnalysisCompositeCut.h"
+#include "PWGDQ/Core/AnalysisCut.h"
+#include "PWGDQ/Core/CutsLibrary.h"
+#include "PWGDQ/Core/HistogramManager.h"
+#include "PWGDQ/Core/HistogramsLibrary.h"
+#include "PWGDQ/Core/MCSignal.h"
+#include "PWGDQ/Core/MCSignalLibrary.h"
+#include "PWGDQ/Core/MixingHandler.h"
+#include "PWGDQ/Core/MixingLibrary.h"
+#include "PWGDQ/Core/VarManager.h"
+#include "PWGDQ/DataModel/ReducedInfoTables.h"
+
+#include "Common/CCDB/EventSelectionParams.h"
+
+#include "CCDB/BasicCCDBManager.h"
+#include "DataFormatsParameters/GRPMagField.h"
+#include "DataFormatsParameters/GRPObject.h"
+#include "DetectorsBase/GeometryManager.h"
+#include "DetectorsBase/Propagator.h"
+#include "Field/MagneticField.h"
+#include "Framework/ASoAHelpers.h"
+#include "Framework/AnalysisDataModel.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/runDataProcessing.h"
+#include "ITSMFTBase/DPLAlpideParam.h"
+
+#include "TGeoGlobalMagField.h"
 #include <TH1F.h>
 #include <TH3F.h>
 #include <THashList.h>
 #include <TList.h>
 #include <TString.h>
-#include "CCDB/BasicCCDBManager.h"
-#include "DataFormatsParameters/GRPObject.h"
-#include "Framework/runDataProcessing.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoAHelpers.h"
-#include "PWGDQ/DataModel/ReducedInfoTables.h"
-#include "PWGDQ/Core/VarManager.h"
-#include "PWGDQ/Core/HistogramManager.h"
-#include "PWGDQ/Core/MixingHandler.h"
-#include "PWGDQ/Core/MCSignal.h"
-#include "PWGDQ/Core/MCSignalLibrary.h"
-#include "PWGDQ/Core/AnalysisCut.h"
-#include "PWGDQ/Core/AnalysisCompositeCut.h"
-#include "PWGDQ/Core/HistogramsLibrary.h"
-#include "PWGDQ/Core/CutsLibrary.h"
-#include "PWGDQ/Core/MixingLibrary.h"
-#include "DataFormatsParameters/GRPMagField.h"
-#include "Field/MagneticField.h"
-#include "TGeoGlobalMagField.h"
-#include "DetectorsBase/Propagator.h"
-#include "DetectorsBase/GeometryManager.h"
-#include "ITSMFTBase/DPLAlpideParam.h"
-#include "Common/CCDB/EventSelectionParams.h"
+
+#include <algorithm>
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
 
 using namespace o2;
 using namespace o2::framework;
@@ -139,25 +145,23 @@ struct taskFwdTrackPid {
   template <bool TMatchedOnly, uint32_t TEventFillMap, uint32_t TTrackFillMap, typename TEvent, typename Muons, typename MftTracks>
   void runFwdTrackPid(TEvent const& event, Muons const& muons, MftTracks const& mftTracks)
   {
-    uint32_t mcDecision = 0;
-
     fwdPidAllList.reserve(1);
     for (const auto& muon : muons) {
       if (muon.has_matchMFTTrack() && muon.trackType() == 0 && TMath::Abs(muon.fwdDcaX()) < fConfigMaxDCA && TMath::Abs(muon.fwdDcaY()) < fConfigMaxDCA) {
         auto mftTrack = muon.template matchMFTTrack_as<MyMftTracks>();
-        fwdPidAllList(muon.trackType(), event.posX(), event.posY(), event.posZ(), event.numContrib(), muon.pt(), muon.eta(), muon.phi(), muon.sign(), mftTrack.mftClusterSizesAndTrackFlags(), muon.fwdDcaX(), muon.fwdDcaY(), muon.chi2MatchMCHMID(), muon.chi2MatchMCHMFT(), mcDecision);
+        fwdPidAllList(muon.trackType(), event.posX(), event.posY(), event.posZ(), event.numContrib(), muon.pt(), muon.eta(), muon.phi(), muon.sign(), mftTrack.mftClusterSizesAndTrackFlags(), muon.fwdDcaX(), muon.fwdDcaY(), muon.chi2MatchMCHMID(), muon.chi2MatchMCHMFT(), 0);
       }
     }
     if constexpr (TMatchedOnly == false) {
       for (const auto& mftTrack : mftTracks) {
         if (TMath::Abs(mftTrack.fwdDcaX()) < fConfigMaxDCA && TMath::Abs(mftTrack.fwdDcaY()) < fConfigMaxDCA) {
           if (downSampleFactor < 1.) {
-            float pseudoRndm = mftTrack.pt() * 1000. - (int64_t)(mftTrack.pt() * 1000);
+            float pseudoRndm = mftTrack.pt() * 1000. - static_cast<int64_t>(mftTrack.pt() * 1000);
             if (pseudoRndm >= downSampleFactor) {
               continue;
             }
           }
-          fwdPidAllList(4, event.posX(), event.posY(), event.posZ(), event.numContrib(), mftTrack.pt(), mftTrack.eta(), mftTrack.phi(), mftTrack.sign(), mftTrack.mftClusterSizesAndTrackFlags(), mftTrack.fwdDcaX(), mftTrack.fwdDcaY(), -999, -999, mcDecision);
+          fwdPidAllList(4, event.posX(), event.posY(), event.posZ(), event.numContrib(), mftTrack.pt(), mftTrack.eta(), mftTrack.phi(), mftTrack.sign(), mftTrack.mftClusterSizesAndTrackFlags(), mftTrack.fwdDcaX(), mftTrack.fwdDcaY(), -999, -999, 0);
         }
       }
     }
@@ -169,31 +173,16 @@ struct taskFwdTrackPid {
   {
     fwdPidAllList.reserve(1);
     for (const auto& muon : muons) {
-      uint32_t mcDecision = 0;
-      int isig = 0;
-      for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig++) {
-        if ((*sig).CheckSignal(false, muon.reducedMCTrack())) {
-          mcDecision |= (uint32_t(1) << isig);
-        }
-      }
-
       if (muon.has_matchMFTTrack() && muon.trackType() == 0 && TMath::Abs(muon.fwdDcaX()) < fConfigMaxDCA && TMath::Abs(muon.fwdDcaY()) < fConfigMaxDCA) {
         auto mftTrack = muon.template matchMFTTrack_as<MyMftTracksMC>();
-        fwdPidAllList(muon.trackType(), event.posX(), event.posY(), event.posZ(), event.numContrib(), muon.pt(), muon.eta(), muon.phi(), muon.sign(), mftTrack.mftClusterSizesAndTrackFlags(), muon.fwdDcaX(), muon.fwdDcaY(), muon.chi2MatchMCHMID(), muon.chi2MatchMCHMFT(), mcDecision);
+        fwdPidAllList(muon.trackType(), event.posX(), event.posY(), event.posZ(), event.numContrib(), muon.pt(), muon.eta(), muon.phi(), muon.sign(), mftTrack.mftClusterSizesAndTrackFlags(), muon.fwdDcaX(), muon.fwdDcaY(), muon.chi2MatchMCHMID(), muon.chi2MatchMCHMFT(), muon.mcReducedFlags());
       }
     }
 
     if constexpr (TMatchedOnly == false) {
       for (const auto& mftTrack : mftTracks) {
-        uint32_t mcDecision = 0;
-        int isig = 0;
-        for (auto sig = fRecMCSignals.begin(); sig != fRecMCSignals.end(); sig++, isig++) {
-          if ((*sig).CheckSignal(false, mftTrack.reducedMCTrack())) {
-            mcDecision |= (uint32_t(1) << isig);
-          }
-        }
         if (TMath::Abs(mftTrack.fwdDcaX()) < fConfigMaxDCA && TMath::Abs(mftTrack.fwdDcaY()) < fConfigMaxDCA) {
-          fwdPidAllList(4, event.posX(), event.posY(), event.posZ(), event.numContrib(), mftTrack.pt(), mftTrack.eta(), mftTrack.phi(), mftTrack.sign(), mftTrack.mftClusterSizesAndTrackFlags(), mftTrack.fwdDcaX(), mftTrack.fwdDcaY(), -999, -999, mcDecision);
+          fwdPidAllList(4, event.posX(), event.posY(), event.posZ(), event.numContrib(), mftTrack.pt(), mftTrack.eta(), mftTrack.phi(), mftTrack.sign(), mftTrack.mftClusterSizesAndTrackFlags(), mftTrack.fwdDcaX(), mftTrack.fwdDcaY(), -999, -999, mftTrack.mcReducedFlags());
         }
       }
     }
@@ -206,19 +195,10 @@ struct taskFwdTrackPid {
     for (auto& mctrack : groupedMCTracks) {
       VarManager::FillTrackMC(groupedMCTracks, mctrack);
 
-      for (auto& sig : fGenMCSignals) {
-        if (sig.GetNProngs() != 1) { // NOTE: 1-prong signals required
-          continue;
-        }
-        bool checked = false;
-        if constexpr (soa::is_soa_filtered_v<TTracksMC>) {
-          auto mctrack_raw = groupedMCTracks.rawIteratorAt(mctrack.globalIndex());
-          checked = sig.CheckSignal(false, mctrack_raw);
-        } else {
-          checked = sig.CheckSignal(false, mctrack);
-        }
-        if (checked) {
-          fHistMan->FillHistClass(Form("MCTruthGen_%s", sig.GetName()), VarManager::fgValues);
+      int isig = 0;
+      for (auto sig = fGenMCSignals.begin(); sig != fGenMCSignals.end(); sig++, isig++) {
+        if (mctrack.mcReducedFlags() & (static_cast<uint16_t>(1) << isig)) {
+          fHistMan->FillHistClass(Form("MCTruthGen_%s", sig->GetName()), VarManager::fgValues);
         }
       }
     }
@@ -287,8 +267,7 @@ void DefineHistograms(HistogramManager* histMan, TString histClasses)
     if (classStr.Contains("MCTruthGen")) {
       dqhistograms::DefineHistograms(histMan, objArray->At(iclass)->GetName(), "mctruth");
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Pt_Rapidity", "MC generator p_{T}, y distribution", false, 120, 0.0, 30.0, VarManager::kMCPt, 150, 2.5, 4.0, VarManager::kMCY);
-      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 200, 2.5, 4.0, VarManager::kMCEta);
-      // histMan->AddHistogram(objArray->At(iclass)->GetName(), "Rapidity", "MC generator y distribution", false, 150, 2.5, 4.0, VarManager::kMCY);
+      histMan->AddHistogram(objArray->At(iclass)->GetName(), "Eta", "MC generator #eta distribution", false, 200, -5.0, 5.0, VarManager::kMCEta);
       histMan->AddHistogram(objArray->At(iclass)->GetName(), "Phi", "MC generator #varphi distribution", false, 50, 0.0, 2. * TMath::Pi(), VarManager::kMCPhi);
     }
 

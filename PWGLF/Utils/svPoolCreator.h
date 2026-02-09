@@ -22,11 +22,6 @@
 #include "DCAFitter/DCAFitterN.h"
 #include "Framework/AnalysisDataModel.h"
 
-using namespace o2;
-using namespace o2::constants;
-using namespace o2::framework;
-using namespace o2::framework::expressions;
-using std::array;
 using CollBracket = o2::math_utils::Bracket<int>;
 
 constexpr uint64_t bOffsetMax = 241; // track compatibility can never go beyond 6 mus (ITS)
@@ -73,23 +68,23 @@ class svPoolCreator
   o2::vertexing::DCAFitterN<2>* getFitter() { return &fitter; }
   std::array<std::vector<TrackCand>, 4> getTrackCandPool() { return trackCandPool; }
 
-  template <typename C>
-  void fillBC2Coll(const C& collisions, aod::BCsWithTimestamps const&)
+  template <typename C, typename BC>
+  void fillBC2Coll(const C& collisions, BC const&)
   {
     for (unsigned i = 0; i < collisions.size(); i++) {
       auto collision = collisions.rawIteratorAt(i);
       if (!collision.has_bc()) {
         continue;
       }
-      bc2Coll[collision.template bc_as<aod::BCsWithTimestamps>().globalBC()] = i;
+      bc2Coll[collision.template bc_as<BC>().globalBC()] = i;
     }
   }
 
-  template <typename T, typename C>
-  void appendTrackCand(const T& trackCand, const C& collisions, int pdgHypo, o2::aod::AmbiguousTracks const& ambiTracks, aod::BCsWithTimestamps const&)
+  template <typename T, typename C, typename BC>
+  void appendTrackCand(const T& trackCand, const C& collisions, int pdgHypo, o2::aod::AmbiguousTracks const& ambiTracks, BC const&)
   {
     if (pdgHypo != track0Pdg && pdgHypo != track1Pdg) {
-      LOG(debug) << "Wrong pdg hypothesis";
+      LOGP(debug, "Wrong pdg hypothesis");
       return;
     }
     bool isDau0 = pdgHypo == track0Pdg;
@@ -97,18 +92,18 @@ class svPoolCreator
     uint64_t globalBC = BcInvalid;
     if (trackCand.has_collision()) {
       if (trackCand.template collision_as<C>().has_bc()) {
-        globalBC = trackCand.template collision_as<C>().template bc_as<aod::BCsWithTimestamps>().globalBC();
+        globalBC = trackCand.template collision_as<C>().template bc_as<BC>().globalBC();
       }
     } else if (!skipAmbiTracks) {
       for (const auto& ambTrack : ambiTracks) {
         if (ambTrack.trackId() != trackCand.globalIndex()) {
           continue;
         }
-        if (!ambTrack.has_bc() || ambTrack.bc_as<aod::BCsWithTimestamps>().size() == 0) {
+        if (!ambTrack.has_bc() || ambTrack.bc_as<BC>().size() == 0) {
           globalBC = BcInvalid;
           break;
         }
-        globalBC = ambTrack.bc_as<aod::BCsWithTimestamps>().begin().globalBC();
+        globalBC = ambTrack.bc_as<BC>().begin().globalBC();
         break;
       }
     } else {
@@ -129,13 +124,17 @@ class svPoolCreator
       }
       firstBC++;
     }
+    if (firstCollIdx == -1) {
+      return;
+    }
+
     // now loop over all the collisions to make the pool
-    for (int i = firstCollIdx; i < collisions.size(); i++) {
-      const auto& collision = collisions.rawIteratorAt(i);
+    for (int collIdx = firstCollIdx; collIdx < collisions.size(); collIdx++) {
+      const auto& collision = collisions.rawIteratorAt(collIdx);
       float collTime = collision.collisionTime();
       float collTimeRes2 = collision.collisionTimeRes() * collision.collisionTimeRes();
-      uint64_t collBC = collision.template bc_as<aod::BCsWithTimestamps>().globalBC();
-      int collIdx = collision.globalIndex();
+      uint64_t collBC = collision.template bc_as<BC>().globalBC();
+      // int collIdx = collision.globalIndex();
       int64_t bcOffset = globalBC - static_cast<int64_t>(collBC);
       if (static_cast<uint64_t>(std::abs(bcOffset)) > bOffsetMax) {
         if (bcOffset < 0) {
@@ -149,13 +148,13 @@ class svPoolCreator
       float trackTimeRes{0.};
       if (trackCand.isPVContributor()) {
         trackTime = trackCand.template collision_as<C>().collisionTime(); // if PV contributor, we assume the time to be the one of the collision
-        trackTimeRes = constants::lhc::LHCBunchSpacingNS;                 // 1 BC
+        trackTimeRes = o2::constants::lhc::LHCBunchSpacingNS;             // 1 BC
       } else {
         trackTime = trackCand.trackTime();
         trackTimeRes = trackCand.trackTimeRes();
       }
 
-      const float deltaTime = trackTime - collTime + bcOffset * constants::lhc::LHCBunchSpacingNS;
+      const float deltaTime = trackTime - collTime + bcOffset * o2::constants::lhc::LHCBunchSpacingNS;
       float sigmaTimeRes2 = collTimeRes2 + trackTimeRes * trackTimeRes;
 
       float thresholdTime = 0.;

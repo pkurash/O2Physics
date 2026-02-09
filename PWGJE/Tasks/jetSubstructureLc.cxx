@@ -13,9 +13,24 @@
 //
 /// \author Nima Zardoshti <nima.zardoshti@cern.ch>
 
-#include "PWGJE/Tasks/jetSubstructureHF.cxx"
+#include "PWGJE/DataModel/Jet.h"
+#include "PWGJE/DataModel/JetSubstructure.h"
+#include "PWGJE/DataModel/JetSubtraction.h"
+#include "PWGJE/Tasks/jetSubstructureHF.h"
 
-using JetSubstructureLc = JetSubstructureHFTask<soa::Join<aod::LcChargedJets, aod::LcChargedJetConstituents>, soa::Join<aod::LcChargedMCDetectorLevelJets, aod::LcChargedMCDetectorLevelJetConstituents>, soa::Join<aod::LcChargedMCParticleLevelJets, aod::LcChargedMCParticleLevelJetConstituents>, soa::Join<aod::LcChargedEventWiseSubtractedJets, aod::LcChargedEventWiseSubtractedJetConstituents>, aod::CandidatesLcData, aod::CandidatesLcMCP, aod::LcCJetSSs, aod::LcCMCDJetSSs, aod::LcCMCPJetSSs, aod::LcCEWSJetSSs, aod::JTrackLcSubs>;
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/ConfigContext.h>
+#include <Framework/DataProcessorSpec.h>
+#include <Framework/runDataProcessing.h>
+
+#include <vector>
+
+using namespace o2;
+using namespace o2::framework;
+using namespace o2::framework::expressions;
+
+using JetSubstructureLc = JetSubstructureHFTask<soa::Join<aod::LcChargedJets, aod::LcChargedJetConstituents>, soa::Join<aod::LcChargedMCDetectorLevelJets, aod::LcChargedMCDetectorLevelJetConstituents>, soa::Join<aod::LcChargedMCParticleLevelJets, aod::LcChargedMCParticleLevelJetConstituents>, soa::Join<aod::LcChargedEventWiseSubtractedJets, aod::LcChargedEventWiseSubtractedJetConstituents>, aod::CandidatesLcData, aod::CandidatesLcMCP, aod::LcCJetSSs, aod::LcCJetRs, aod::LcChargedSPs, aod::LcChargedPRs, aod::LcCMCDJetSSs, aod::LcCMCDJetRs, aod::LcChargedMCDetectorLevelSPs, aod::LcChargedMCDetectorLevelPRs, aod::LcCMCPJetSSs, aod::LcCMCPJetRs, aod::LcChargedMCParticleLevelSPs, aod::LcChargedMCParticleLevelPRs, aod::LcCEWSJetSSs, aod::LcChargedEventWiseSubtractedSPs, aod::LcChargedEventWiseSubtractedPRs, aod::JTrackLcSubs>;
 
 WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
 {

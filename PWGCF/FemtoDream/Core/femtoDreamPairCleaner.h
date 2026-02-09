@@ -1,4 +1,4 @@
-// Copyright 2019-2022 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2025 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -74,14 +74,25 @@ class FemtoDreamPairCleaner
         return true;
       }
       return false;
-    } else if constexpr (mPartOneType == o2::aod::femtodreamparticle::ParticleType::kTrack && mPartTwoType == o2::aod::femtodreamparticle::ParticleType::kCharmHadron) {
+    } else if constexpr (mPartOneType == o2::aod::femtodreamparticle::ParticleType::kTrack && (mPartTwoType == o2::aod::femtodreamparticle::ParticleType::kCharmHadron3Prong || mPartTwoType == o2::aod::femtodreamparticle::ParticleType::kCharmHadronDstar)) {
       /// Track-CharmHadron combination
-      if (part2.candidateSelFlag() < o2::aod::fdhf::lcToPKPi) {
+      if (!part2.candidateSelFlag()) {
         LOG(fatal) << "FemtoDreamPairCleaner: passed arguments don't agree with FemtoDreamPairCleaner instantiation! Please provide second argument Charm candidate.";
         return false;
       }
 
       if (part1.trackId() != part2.prong0Id() && part1.trackId() != part2.prong1Id() && part1.trackId() != part2.prong2Id()) {
+        return true;
+      }
+      return false;
+    } else if constexpr (mPartOneType == o2::aod::femtodreamparticle::ParticleType::kTrack && mPartTwoType == o2::aod::femtodreamparticle::ParticleType::kCharmHadron2Prong) {
+      /// Track-CharmHadron combination
+      if (!part2.candidateSelFlag()) {
+        LOG(fatal) << "FemtoDreamPairCleaner: passed arguments don't agree with FemtoDreamPairCleaner instantiation! Please provide second argument Charm candidate.";
+        return false;
+      }
+
+      if (part1.trackId() != part2.prong0Id() && part1.trackId() != part2.prong1Id()) {
         return true;
       }
       return false;

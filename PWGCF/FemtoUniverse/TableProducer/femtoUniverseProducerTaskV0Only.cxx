@@ -1,4 +1,4 @@
-// Copyright 2019-2022 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2025 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -13,27 +13,33 @@
 /// \author Andi Mathis, TU München, andreas.mathis@ph.tum.de
 /// \author Zuzanna Chochulska, WUT Warsaw & CTU Prague, zchochul@cern.ch
 
-#include <CCDB/BasicCCDBManager.h>
-#include "Common/Core/trackUtilities.h"
-#include "Common/DataModel/EventSelection.h"
-#include "Common/DataModel/Multiplicity.h"
-#include "Common/DataModel/PIDResponse.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "DataFormatsParameters/GRPMagField.h"
-#include "DataFormatsParameters/GRPObject.h"
 #include "PWGCF/FemtoUniverse/Core/FemtoUniverseCollisionSelection.h"
 #include "PWGCF/FemtoUniverse/Core/FemtoUniverseTrackSelection.h"
 #include "PWGCF/FemtoUniverse/Core/FemtoUniverseV0Selection.h"
+#include "PWGCF/FemtoUniverse/DataModel/FemtoDerived.h"
+#include "PWGLF/DataModel/LFStrangenessTables.h"
+
+#include "Common/Core/trackUtilities.h"
+#include "Common/DataModel/EventSelection.h"
+#include "Common/DataModel/Multiplicity.h"
+#include "Common/DataModel/PIDResponseTOF.h"
+#include "Common/DataModel/PIDResponseTPC.h"
+#include "Common/DataModel/TrackSelectionTables.h"
+
+#include "DataFormatsParameters/GRPMagField.h"
+#include "DataFormatsParameters/GRPObject.h"
 #include "Framework/ASoAHelpers.h"
 #include "Framework/AnalysisDataModel.h"
 #include "Framework/AnalysisTask.h"
 #include "Framework/HistogramRegistry.h"
 #include "Framework/runDataProcessing.h"
-#include "Math/Vector4D.h"
-#include "PWGCF/FemtoUniverse/DataModel/FemtoDerived.h"
-#include "PWGLF/DataModel/LFStrangenessTables.h"
 #include "ReconstructionDataFormats/Track.h"
+#include <CCDB/BasicCCDBManager.h>
+
+#include "Math/Vector4D.h"
 #include "TMath.h"
+
+#include <vector>
 
 using namespace o2;
 using namespace o2::analysis::femto_universe;
@@ -468,7 +474,7 @@ struct femtoUniverseProducerTaskV0Only {
               postrack.sign(), (uint8_t)postrack.tpcNClsFound(),
               postrack.tpcNClsFindable(),
               (uint8_t)postrack.tpcNClsCrossedRows(),
-              postrack.tpcNClsShared(), postrack.tpcInnerParam(),
+              postrack.tpcNClsShared(), postrack.tpcFractionSharedCls(), postrack.tpcInnerParam(),
               postrack.itsNCls(), postrack.itsNClsInnerBarrel(),
               postrack.dcaXY(), postrack.dcaZ(), postrack.tpcSignal(),
               postrack.tpcNSigmaStoreEl(), postrack.tpcNSigmaStorePi(),
@@ -482,7 +488,7 @@ struct femtoUniverseProducerTaskV0Only {
               negtrack.sign(), (uint8_t)negtrack.tpcNClsFound(),
               negtrack.tpcNClsFindable(),
               (uint8_t)negtrack.tpcNClsCrossedRows(),
-              negtrack.tpcNClsShared(), negtrack.tpcInnerParam(),
+              negtrack.tpcNClsShared(), negtrack.tpcFractionSharedCls(), negtrack.tpcInnerParam(),
               negtrack.itsNCls(), negtrack.itsNClsInnerBarrel(),
               negtrack.dcaXY(), negtrack.dcaZ(), negtrack.tpcSignal(),
               negtrack.tpcNSigmaStoreEl(), negtrack.tpcNSigmaStorePi(),
@@ -492,7 +498,7 @@ struct femtoUniverseProducerTaskV0Only {
               negtrack.tofNSigmaStorePr(), negtrack.tofNSigmaStoreDe(), -999.,
               -999., -999., -999., -999.,
               -999.); // QA for negative daughter
-            outputDebugParts(-999., -999., -999., -999., -999., -999., -999.,
+            outputDebugParts(-999., -999., -999., -999., -999., -999., -999., -999.,
                              -999., -999., -999., -999., -999., -999., -999.,
                              -999., -999., -999., -999., -999., -999., -999.,
                              v0.dcaV0daughters(), v0.v0radius(), v0.x(), v0.y(),

@@ -1,4 +1,4 @@
-// Copyright 2019-2022 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2025 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -15,29 +15,34 @@
 /// \author Georgios Mantzaridis, TU München, georgios.mantzaridis@tum.de
 /// \author Anton Riedel, TU München, anton.riedel@tum.de
 
-#include <vector>
-#include "TMath.h"
-#include "CCDB/BasicCCDBManager.h"
+#include "PWGCF/DataModel/FemtoDerived.h"
 #include "PWGCF/FemtoDream/Core/femtoDreamCollisionSelection.h"
 #include "PWGCF/FemtoDream/Core/femtoDreamTrackSelection.h"
 #include "PWGCF/FemtoDream/Core/femtoDreamUtils.h"
-#include "PWGCF/DataModel/FemtoDerived.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/runDataProcessing.h"
-#include "Framework/HistogramRegistry.h"
-#include "Framework/ASoAHelpers.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "Common/DataModel/PIDResponse.h"
-#include "Common/DataModel/PIDResponseITS.h"
+#include "PWGLF/DataModel/LFStrangenessTables.h"
+
+#include "Common/Core/trackUtilities.h"
 #include "Common/DataModel/EventSelection.h"
 #include "Common/DataModel/Multiplicity.h"
-#include "ReconstructionDataFormats/Track.h"
-#include "Common/Core/trackUtilities.h"
-#include "PWGLF/DataModel/LFStrangenessTables.h"
-#include "DataFormatsParameters/GRPObject.h"
+#include "Common/DataModel/PIDResponseITS.h"
+#include "Common/DataModel/PIDResponseTOF.h"
+#include "Common/DataModel/PIDResponseTPC.h"
+#include "Common/DataModel/TrackSelectionTables.h"
+
+#include "CCDB/BasicCCDBManager.h"
 #include "DataFormatsParameters/GRPMagField.h"
+#include "DataFormatsParameters/GRPObject.h"
+#include "Framework/ASoAHelpers.h"
+#include "Framework/AnalysisDataModel.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/HistogramRegistry.h"
+#include "Framework/runDataProcessing.h"
+#include "ReconstructionDataFormats/Track.h"
+
 #include "Math/Vector4D.h"
+#include "TMath.h"
+
+#include <vector>
 
 using namespace o2;
 using namespace o2::analysis::femtoDream;
@@ -79,6 +84,8 @@ struct femtoDreamProducerReducedTask {
   Configurable<int> ConfEvtTriggerSel{"ConfEvtTriggerSel", kINT7, "Evt sel: trigger"};
   Configurable<bool> ConfEvtOfflineCheck{"ConfEvtOfflineCheck", false, "Evt sel: check for offline selection"};
   Configurable<bool> ConfEvtAddOfflineCheck{"ConfEvtAddOfflineCheck", false, "Evt sel: additional checks for offline selection (not part of sel8 yet)"};
+  Configurable<float> ConfEvtMinSphericity{"ConfEvtMinSphericity", 0.0f, "Evt sel: Min. sphericity of event"};
+  Configurable<float> ConfEvtSphericityPtmin{"ConfEvtSphericityPtmin", 0.0f, "Evt sel: Min. Pt for sphericity calculation"};
 
   Configurable<bool> ConfTrkRejectNotPropagated{"ConfTrkRejectNotPropagated", false, "True: reject not propagated tracks"};
 
@@ -116,7 +123,7 @@ struct femtoDreamProducerReducedTask {
     int CutBits = 8 * sizeof(o2::aod::femtodreamparticle::cutContainerType);
     Registry.add("AnalysisQA/CutCounter", "; Bit; Counter", kTH1F, {{CutBits + 1, -0.5, CutBits + 0.5}});
 
-    colCuts.setCuts(ConfEvtZvtx.value, ConfEvtTriggerCheck.value, ConfEvtTriggerSel.value, ConfEvtOfflineCheck.value, ConfEvtAddOfflineCheck.value, ConfIsRun3.value);
+    colCuts.setCuts(ConfEvtZvtx.value, ConfEvtTriggerCheck.value, ConfEvtTriggerSel.value, ConfEvtOfflineCheck.value, ConfEvtAddOfflineCheck.value, ConfIsRun3.value, ConfEvtMinSphericity.value, ConfEvtSphericityPtmin.value);
     colCuts.init(&qaRegistry);
 
     trackCuts.setSelection(ConfTrkCharge, femtoDreamTrackSelection::kSign, femtoDreamSelection::kEqual);
@@ -317,7 +324,8 @@ struct femtoDreamProducerReducedTask {
                          track.itsNSigmaDe(),
                          track.itsNSigmaTr(),
                          track.itsNSigmaHe(),
-                         -999., -999., -999., -999., -999., -999.);
+                         -999., -999., -999., -999., -999., -999.,
+                         -999., -999., -999., -999., -999., -999., -999.);
       }
     }
   }

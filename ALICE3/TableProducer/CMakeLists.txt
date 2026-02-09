@@ -21,11 +21,6 @@ o2physics_add_dpl_workflow(alice3-trackextension
                     PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2::ReconstructionDataFormats
                     COMPONENT_NAME Analysis)
 
-o2physics_add_dpl_workflow(alice3-pid-tof
-                    SOURCES alice3-pidTOF.cxx
-                    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2Physics::ALICE3Core
-                    COMPONENT_NAME Analysis)
-
 o2physics_add_dpl_workflow(alice3-centrality
                     SOURCES alice3-centrality.cxx
                     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
@@ -41,7 +36,37 @@ o2physics_add_dpl_workflow(alice3-decayfinder
                     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2::DCAFitter
                     COMPONENT_NAME Analysis)
 
-o2physics_add_dpl_workflow(alice3-multicharm
-                    SOURCES alice3-multicharm.cxx
+o2physics_add_dpl_workflow(alice3-multicharm-finder
+                    SOURCES alice3MulticharmFinder.cxx
                     PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2::DCAFitter
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(alice3-correlatorddbar
+                    SOURCES alice3-correlatorDDbar.cxx
+                    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2::DCAFitter
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(alice3-hf-selector-3prong
+                    SOURCES alice3HfSelector3Prong.cxx
+                    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2::DCAFitter O2Physics::MLCore
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(alice3-hf-tree-creator-3prong
+                    SOURCES alice3HfTreeCreator3Prong.cxx
+                    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore O2::DCAFitter
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(alice3-tracking-translator
+                    SOURCES alice3TrackingTranslator.cxx
+                    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(alice3-dq-table-maker
+                    SOURCES alice3-dq-table-maker.cxx
+                    PUBLIC_LINK_LIBRARIES O2::Framework O2Physics::AnalysisCore O2::DetectorsBase O2Physics::AnalysisCCDB O2Physics::PWGDQCore
+                    COMPONENT_NAME Analysis)
+
+o2physics_add_dpl_workflow(alice3strangenessfinder
+                    SOURCES alice3strangenessFinder.cxx
+                    PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
                     COMPONENT_NAME Analysis)

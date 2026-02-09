@@ -1,4 +1,4 @@
-// Copyright 2019-2022 CERN and copyright holders of ALICE O2.
+// Copyright 2019-2025 CERN and copyright holders of ALICE O2.
 // See https://alice-o2.web.cern.ch/copyright for details of the copyright holders.
 // All rights not expressly granted are reserved.
 //
@@ -20,17 +20,20 @@
 #ifndef PWGCF_FEMTOUNIVERSE_CORE_FEMTOUNIVERSECONTAINER_H_
 #define PWGCF_FEMTOUNIVERSE_CORE_FEMTOUNIVERSECONTAINER_H_
 
-#include <fairlogger/Logger.h>
-#include <vector>
-#include <string>
+#include "PWGCF/FemtoUniverse/Core/FemtoUniverseMath.h"
+#include "PWGCF/FemtoUniverse/DataModel/FemtoDerived.h"
+
+#include "Common/Core/RecoDecay.h"
 
 #include "Framework/HistogramRegistry.h"
-#include "Common/Core/RecoDecay.h"
-#include "PWGCF/FemtoUniverse/Core/FemtoUniverseMath.h"
+#include <Framework/Logger.h>
 
 #include "Math/Vector4D.h"
-#include "TMath.h"
 #include "TDatabasePDG.h"
+#include "TMath.h"
+
+#include <string>
+#include <vector>
 
 using namespace o2::framework;
 
@@ -53,7 +56,7 @@ enum EventType { same, ///< Pair from same event
 /// \brief Container for all histogramming related to the correlation function. The two
 /// particles of the pair are passed here, and the correlation function and QA histograms
 /// are filled according to the specified observable
-/// \tparam eventType Type of the event (same/mixed)
+/// \tparam eventType Type of the event (same or mixed)
 /// \tparam obs Observable to be computed (k*/Q_inv/...)
 template <femto_universe_container::EventType eventType, femto_universe_container::Observable obs>
 class FemtoUniverseContainer
@@ -87,6 +90,8 @@ class FemtoUniverseContainer
     mHistogramRegistry->add((folderName + "/DeltaEtaDeltaPhi").c_str(), ";  #Delta#varphi (rad); #Delta#eta", kTH2F, {phiAxis, etaAxis});
     if (use3dplots) {
       mHistogramRegistry->add((folderName + "/relPairkstarmTMult").c_str(), ("; " + femtoObs + "; #it{m}_{T} (GeV/#it{c}^{2}); Multiplicity").c_str(), kTH3F, {femtoObsAxis, mTAxis3D, multAxis3D});
+      mHistogramRegistry->add((folderName + "/relPairkstarkTMult").c_str(), ("; " + femtoObs + "; #it{k}_{T} (GeV/#it{c}^{2}); Multiplicity").c_str(), kTH3F, {femtoObsAxis, kTAxis, multAxis3D});
+      mHistogramRegistry->add((folderName + "/relPairkTPtPart1PtPart2").c_str(), ("; #it{k}_{T} (GeV/#it{c}^{2}); #it{p}_{T,1} (GeV/#it{c}^{2}); #it{p}_{T,2} (GeV/#it{c}^{2})"), kTH3F, {kTAxis, {375, 0., 7.5}, {375, 0., 7.5}});
     }
   }
 
@@ -195,6 +200,8 @@ class FemtoUniverseContainer
     mHistogramRegistry->fill(HIST(FolderSuffix[EventType]) + HIST(o2::aod::femtouniverse_mc_particle::MCTypeName[mc]) + HIST("/DeltaEtaDeltaPhi"), deltaPhi, deltaEta, weight);
     if (use3dplots) {
       mHistogramRegistry->fill(HIST(FolderSuffix[EventType]) + HIST(o2::aod::femtouniverse_mc_particle::MCTypeName[mc]) + HIST("/relPairkstarmTMult"), femtoObs, mT, mult, weight);
+      mHistogramRegistry->fill(HIST(FolderSuffix[EventType]) + HIST(o2::aod::femtouniverse_mc_particle::MCTypeName[mc]) + HIST("/relPairkstarkTMult"), femtoObs, kT, mult, weight);
+      mHistogramRegistry->fill(HIST(FolderSuffix[EventType]) + HIST(o2::aod::femtouniverse_mc_particle::MCTypeName[mc]) + HIST("/relPairkTPtPart1PtPart2"), kT, part1.pt(), part2.pt());
     }
   }
 
@@ -226,12 +233,16 @@ class FemtoUniverseContainer
   /// \param part2 Particle two
   /// \param mult Multiplicity of the event
   template <bool isMC, typename T>
-  void setPair(T const& part1, T const& part2, const int mult, bool use3dplots, float weight = 1.0f)
+  void setPair(T const& part1, T const& part2, const int mult, bool use3dplots, float weight = 1.0f, bool isiden = false)
   {
     float femtoObs, femtoObsMC;
     // Calculate femto observable and the mT with reconstructed information
     if constexpr (FemtoObs == femto_universe_container::Observable::kstar) {
-      femtoObs = FemtoUniverseMath::getkstar(part1, mMassOne, part2, mMassTwo);
+      if (!isiden) {
+        femtoObs = FemtoUniverseMath::getkstar(part1, mMassOne, part2, mMassTwo);
+      } else {
+        femtoObs = 2.0 * FemtoUniverseMath::getkstar(part1, mMassOne, part2, mMassTwo);
+      }
     }
     const float mT = FemtoUniverseMath::getmT(part1, mMassOne, part2, mMassTwo);
 
@@ -242,7 +253,11 @@ class FemtoUniverseContainer
         if (part1.has_fdMCParticle() && part2.has_fdMCParticle()) {
           // calculate the femto observable and the mT with MC truth information
           if constexpr (FemtoObs == femto_universe_container::Observable::kstar) {
-            femtoObsMC = FemtoUniverseMath::getkstar(part1.fdMCParticle(), mMassOne, part2.fdMCParticle(), mMassTwo);
+            if (!isiden) {
+              femtoObsMC = FemtoUniverseMath::getkstar(part1.fdMCParticle(), mMassOne, part2.fdMCParticle(), mMassTwo);
+            } else {
+              femtoObsMC = 2.0 * FemtoUniverseMath::getkstar(part1.fdMCParticle(), mMassOne, part2.fdMCParticle(), mMassTwo);
+            }
           }
           const float mTMC = FemtoUniverseMath::getmT(part1.fdMCParticle(), mMassOne, part2.fdMCParticle(), mMassTwo);
 

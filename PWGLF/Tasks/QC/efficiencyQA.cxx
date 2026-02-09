@@ -9,27 +9,27 @@
 // granted to it by virtue of its status as an Intergovernmental Organization
 // or submit itself to any jurisdiction.
 
-#include <array>
-#include <vector>
-#include <random>
-
-#include "Framework/runDataProcessing.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoAHelpers.h"
-#include "ReconstructionDataFormats/Track.h"
+#include "Common/Core/PID/TPCPIDResponse.h"
 #include "Common/Core/RecoDecay.h"
 #include "Common/Core/trackUtilities.h"
 #include "Common/DataModel/EventSelection.h"
-#include "DetectorsBase/Propagator.h"
-#include "DetectorsBase/GeometryManager.h"
-#include "DataFormatsParameters/GRPObject.h"
-#include "DataFormatsParameters/GRPMagField.h"
-#include "CCDB/BasicCCDBManager.h"
+#include "Common/DataModel/PIDResponseTPC.h"
 
-#include "Common/Core/PID/TPCPIDResponse.h"
-#include "Common/DataModel/PIDResponse.h"
+#include "CCDB/BasicCCDBManager.h"
 #include "DCAFitter/DCAFitterN.h"
+#include "DataFormatsParameters/GRPMagField.h"
+#include "DataFormatsParameters/GRPObject.h"
+#include "DetectorsBase/GeometryManager.h"
+#include "DetectorsBase/Propagator.h"
+#include "Framework/ASoAHelpers.h"
+#include "Framework/AnalysisDataModel.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/runDataProcessing.h"
+#include "ReconstructionDataFormats/Track.h"
+
+#include <array>
+#include <random>
+#include <vector>
 
 using namespace o2;
 using namespace o2::framework;
@@ -449,7 +449,7 @@ struct efficiencyQA {
       histos.fill(HIST("tagCuts"), 5., tagTrack.sign() * tagTrack.pt());
 
       // if survived all selections, propagate decay daughters to PV
-      gpu::gpustd::array<float, 2> dcaInfo;
+      std::array<float, 2> dcaInfo;
 
       o2::base::Propagator::Instance()->propagateToDCABxByBz({collision.posX(), collision.posY(), collision.posZ()}, tagTrackCov, 2.f, fitter.getMatCorrType(), &dcaInfo);
       float tagDcaXYZ = dcaInfo[0];
@@ -534,7 +534,7 @@ struct efficiencyQA {
             continue;
           }
 
-          gpu::gpustd::array<float, 2> dcaInfo;
+          std::array<float, 2> dcaInfo;
           auto tpcTrackCov = getTrackParCov(tpcTrack);
           if (propToTPCinnerWall) {
             o2::base::Propagator::Instance()->PropagateToXBxByBz(probeTrackCov, 70.f, 1.f, 2.f, fitter.getMatCorrType());
@@ -660,7 +660,7 @@ struct efficiencyQA {
       if (hasITS && !hasTPC) {
         auto tagTrack = tracks.rawIteratorAt(probeTrack.globalIndexTag);
         auto tagTrackCov = getTrackParCov(tagTrack);
-        gpu::gpustd::array<float, 2> dcaInfo;
+        std::array<float, 2> dcaInfo;
         o2::base::Propagator::Instance()->propagateToDCABxByBz({probeTrack.vtx0, probeTrack.vtx1, probeTrack.vtx2}, tagTrackCov, 2.f, fitter.getMatCorrType(), &dcaInfo);
         std::array<float, 3> momTag;
         tagTrackCov.getPxPyPzGlo(momTag);
@@ -697,7 +697,7 @@ struct efficiencyQA {
             histos.fill(HIST("timeTpcItsNoNorm"), tdiff);
 
             auto trackCov = getTrackParCov(tpcTrack);
-            gpu::gpustd::array<float, 2> dcaInfo;
+            std::array<float, 2> dcaInfo;
             if (propToTPCinnerWall) {
               o2::base::Propagator::Instance()->PropagateToXBxByBz(trackCov, 70.f, 1.f, 2.f, fitter.getMatCorrType());
             } else {
@@ -848,7 +848,7 @@ struct efficiencyQA {
           const o2::math_utils::Point3D<float> collVtx{collision.posX(), collision.posY(), collision.posZ()};
 
           auto trackParCov = getTrackParCov(track);
-          gpu::gpustd::array<float, 2> dcaInfo;
+          std::array<float, 2> dcaInfo;
           o2::base::Propagator::Instance()->propagateToDCA(collVtx, trackParCov, d_bz, 2.f, static_cast<o2::base::Propagator::MatCorrType>(cfgMaterialCorrection.value), &dcaInfo);
 
           auto trackPt = track.sign() * trackParCov.getPt();

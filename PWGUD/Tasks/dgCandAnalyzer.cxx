@@ -13,18 +13,19 @@
 // \author Paul Buehler, paul.buehler@oeaw.ac.at
 // \since  06.06.2022
 
-#include <set>
-#include "Framework/runDataProcessing.h"
-#include "Framework/AnalysisTask.h"
-
-#include "CCDB/BasicCCDBManager.h"
-#include "DataFormatsParameters/GRPLHCIFData.h"
-#include "CommonConstants/LHCConstants.h"
-#include "Common/DataModel/PIDResponse.h"
-#include "PWGUD/DataModel/UDTables.h"
-#include "PWGUD/Core/UDHelpers.h"
 #include "PWGUD/Core/DGPIDSelector.h"
 #include "PWGUD/Core/UDGoodRunSelector.h"
+#include "PWGUD/Core/UDHelpers.h"
+#include "PWGUD/DataModel/UDTables.h"
+
+#include "CCDB/BasicCCDBManager.h"
+#include "CommonConstants/LHCConstants.h"
+#include "DataFormatsParameters/GRPLHCIFData.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/runDataProcessing.h"
+
+#include <set>
+#include <string>
 
 using namespace o2;
 using namespace o2::framework;
@@ -277,8 +278,6 @@ struct DGCandAnalyzer {
     registry.fill(HIST("FIT/FDDCAmplitude"), dgcand.totalFDDAmplitudeC(), 1.);
 
     // skip events with too few/many tracks
-    // Partition<UDTracksFull> PVContributors = aod::udtrack::isPVContributor == true;
-    // PVContributors.bindTable(dgtracks);
     if (dgcand.numContrib() != PVContributors.size()) {
       LOGF(info, "Missmatch of PVContributors %d != %d", dgcand.numContrib(), PVContributors.size());
     }

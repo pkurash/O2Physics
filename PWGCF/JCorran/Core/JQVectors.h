@@ -65,7 +65,7 @@ class JQVectors : public std::conditional_t<gap, JQVectorsGapBase<Q, nh, nk>, JQ
         continue;
       using JInputClassIter = typename JInputClass::iterator;
       if constexpr (std::experimental::is_detected<hasInvMass, const JInputClassIter>::value) {
-        if (track.invMass() < massMin || track.invMass() > massMax)
+        if (track.invMass() < massMin || track.invMass() >= massMax)
           continue;
       }
 
@@ -84,7 +84,7 @@ class JQVectors : public std::conditional_t<gap, JQVectorsGapBase<Q, nh, nk>, JQ
           if constexpr (std::experimental::is_detected<hasWeightNUA, const JInputClassIter>::value)
             tf /= track.weightNUA();
           if constexpr (std::experimental::is_detected<hasWeightEff, const JInputClassIter>::value)
-            tf /= track.weightEff();
+            tf *= track.weightEff();
         }
       }
     }
