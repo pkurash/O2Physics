@@ -15,6 +15,10 @@
 
 #include "Framework/runDataProcessing.h"
 #include "Framework/AnalysisTask.h"
+#include "Framework/HistogramRegistry.h"
+#include <TParameter.h>
+
+#include "Framework/StaticFor.h"
 
 using namespace o2;
 using namespace o2::framework;
@@ -25,7 +29,7 @@ struct SingleTracks {
   size_t count = 0;
 
   // loop over each single track
-  void process(aod::Track const& track)
+  void process(aod::TrackIU const& track)
   {
     // count the tracks contained in the input file
     LOGF(info, "Track %d: Momentum: %f", count, track.p());
@@ -41,7 +45,7 @@ struct AllTracks {
   size_t totalCount = 0;
 
   // loop over data frames
-  void process(aod::Tracks const& tracks)
+  void process(aod::TracksIU const& tracks)
   {
     numberDataFrames++;
 
@@ -57,10 +61,36 @@ struct AllTracks {
   }
 };
 
+struct EtaPhiPtHistograms {
+  /// Construct a registry object with direct declaration
+  HistogramRegistry registry{
+    "registry",
+    {
+      {"pt", "pt", {HistType::kTH1F, {{400, 0., 40.}}}, true},     //
+      {"eta", "#eta", {HistType::kTH1F, {{102, -2.01, 2.01}}}},     //
+      {"eta2", "#eta", {HistType::kTH1F, {{102, -2.01, 2.01}}}},     //
+      {"phi", "#varphi", {HistType::kTH1F, {{100, 0., 2. * M_PI}}}, true}, //
+      {"ptToPt", "#ptToPt", {HistType::kTH2F, {{100, -0.01, 10.01}, {100, -0.01, 10.01}}}} //
+    }                                                               //
+  };
+
+  void process(aod::TracksIU const& tracks)
+  {
+    registry.fill<aod::track::Eta>(HIST("eta2"), tracks, aod::track::pt > 1.0f);
+    registry.fill<aod::track::Pt, aod::track::Pt>(HIST("ptToPt"), tracks, aod::track::pt < 5.0f);
+    for (auto& track : tracks) {
+      registry.get<TH1>(HIST("pt"))->Fill(track.pt());
+      registry.get<TH1>(HIST("eta"))->Fill(track.eta());
+      registry.get<TH1>(HIST("phi"))->Fill(track.phi());
+    }
+  }
+};
+
 WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
 {
   return WorkflowSpec{
     adaptAnalysisTask<SingleTracks>(cfgc),
     adaptAnalysisTask<AllTracks>(cfgc),
+    adaptAnalysisTask<EtaPhiPtHistograms>(cfgc),
   };
 }

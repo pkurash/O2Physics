@@ -28,6 +28,10 @@ o2physics_add_dpl_workflow(track-iteration
                   SOURCES src/trackIteration.cxx
                   COMPONENT_NAME AnalysisTutorial)
 
+o2physics_add_dpl_workflow(test-codes
+	          SOURCES src/testCodes.cxx
+                  COMPONENT_NAME AnalysisTutorial)
+
 o2physics_add_dpl_workflow(pid
                   SOURCES src/pidTpcTof.cxx
                   PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
