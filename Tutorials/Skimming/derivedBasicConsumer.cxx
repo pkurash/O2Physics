@@ -25,6 +25,13 @@ using namespace o2::framework::expressions;
 #include "Framework/runDataProcessing.h"
 
 struct DerivedBasicConsumer {
+  SliceCache cache;
+
+  Filter collZfilter = nabs(aod::collision::posZ) < 10.0f;
+
+  Partition<aod::DrTracks> associatedTracks = aod::exampleTrackSpace::pt < 6.0f && aod::exampleTrackSpace::pt > 4.0f;
+  Partition<aod::DrTracks> triggerTracks = aod::exampleTrackSpace::pt > 6.0f;
+
   /// Function to aid in calculating delta-phi
   /// \param phi1 first phi value
   /// \param phi2 second phi value
@@ -47,12 +54,39 @@ struct DerivedBasicConsumer {
   {
     // define axes you want to use
     const AxisSpec axisCounter{1, 0, +1, ""};
+    const AxisSpec axisPt{200, 0.0f, 20.0f, "p_{T}"};
+    const AxisSpec axisDeltaPhi{100, -0.5*TMath::Pi(), +1.5*TMath::Pi(), "#Delta#phi"};
+    const AxisSpec axisDeltaEta{100, -1.0, +1.0, "#Delta#eta"};
+    
     histos.add("eventCounter", "eventCounter", kTH1F, {axisCounter});
+    histos.add("zvertex", "collision vertex z-position", kTH1F, {{300, -15.f, 15.f, "vtx_{z}"}});
+    histos.add("ptAssoHistogram", "ptAssoHistogram", kTH1F, {axisPt});
+    histos.add("ptTrigHistogram", "ptTrigHistogram", kTH1F, {axisPt});
+    histos.add("correlationFunction", "correlationFunction", kTH1D, {axisDeltaPhi});
+    histos.add("correlationFunction2d", "correlationFunction2d", kTH2F, {axisDeltaPhi, axisDeltaEta});
   }
 
-  void process(aod::DrCollision const& /*collision*/)
+  void process(soa::Filtered<aod::DrCollisions>::iterator const& collision,
+	        aod::DrTracks const& tracks)
   {
     histos.fill(HIST("eventCounter"), 0.5);
+    histos.fill(HIST("zvertex"), collision.posZ());
+    
+    //partitions are not grouped by default!
+    auto assoTracksThisCollision = associatedTracks->sliceByCached(aod::exampleTrackSpace::drCollisionId, collision.globalIndex(), cache);
+    auto trigTracksThisCollision = triggerTracks->sliceByCached(aod::exampleTrackSpace::drCollisionId, collision.globalIndex(), cache);
+
+    for (auto& track : assoTracksThisCollision)
+      histos.fill(HIST("ptAssoHistogram"), track.pt());
+    for (auto& track : trigTracksThisCollision)
+      histos.fill(HIST("ptTrigHistogram"), track.pt());
+
+    for (auto const& [trigger, associated] :
+        combinations(o2::soa::CombinationsFullIndexPolicy(trigTracksThisCollision, assoTracksThisCollision))) {
+        histos.fill(HIST("correlationFunction"), ComputeDeltaPhi(trigger.phi(),associated.phi()));
+	histos.fill(HIST("correlationFunction2d"), ComputeDeltaPhi(trigger.phi(),associated.phi()),
+			trigger.eta() - associated.eta());
+    }
   }
 };
 

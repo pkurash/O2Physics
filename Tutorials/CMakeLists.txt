@@ -32,6 +32,16 @@ o2physics_add_dpl_workflow(test-codes
 	          SOURCES src/testCodes.cxx
                   COMPONENT_NAME AnalysisTutorial)
 
+o2physics_add_dpl_workflow(test-codes2
+	          SOURCES src/testCodes2.cxx
+                  PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+                  COMPONENT_NAME AnalysisTutorial)
+
+o2physics_add_dpl_workflow(src-my-example-task
+	          SOURCES src/myExampleTask.cxx
+                  PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
+                  COMPONENT_NAME AnalysisTutorial)
+
 o2physics_add_dpl_workflow(pid
                   SOURCES src/pidTpcTof.cxx
                   PUBLIC_LINK_LIBRARIES O2Physics::AnalysisCore
