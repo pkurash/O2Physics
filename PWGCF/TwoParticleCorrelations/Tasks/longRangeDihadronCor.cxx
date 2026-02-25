@@ -54,7 +54,10 @@
 #include "TRandom3.h"
 #include <TPDGCode.h>
 
+#include <map>
+#include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace o2;
@@ -685,10 +688,11 @@ struct LongRangeDihadronCor {
         ampl = 0.;
       if (system == SameEvent)
         registry.fill(HIST("FT0Amp"), id, ampl);
-      ampl = ampl / cstFT0RelGain[iCh];
+      ampl = ampl / cstFT0RelGain[id];
       if (system == SameEvent) {
         registry.fill(HIST("FT0AmpCorrect"), id, ampl);
-        histAmpCorrectPerRun[lastRunNumber]->Fill(id, ampl);
+        if (cfgFwdConfig.cfgRunbyRunAmplitudeFT0)
+          histAmpCorrectPerRun[lastRunNumber]->Fill(id, ampl);
       }
     } else if (fitType == kFT0A) {
       id = ft0.channelA()[iCh];
@@ -697,10 +701,11 @@ struct LongRangeDihadronCor {
         ampl = 0.;
       if (system == SameEvent)
         registry.fill(HIST("FT0Amp"), id, ampl);
-      ampl = ampl / cstFT0RelGain[iCh];
+      ampl = ampl / cstFT0RelGain[id];
       if (system == SameEvent) {
         registry.fill(HIST("FT0AmpCorrect"), id, ampl);
-        histAmpCorrectPerRun[lastRunNumber]->Fill(id, ampl);
+        if (cfgFwdConfig.cfgRunbyRunAmplitudeFT0)
+          histAmpCorrectPerRun[lastRunNumber]->Fill(id, ampl);
       }
     } else {
       LOGF(fatal, "Cor Index %d out of range", fitType);
