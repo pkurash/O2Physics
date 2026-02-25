@@ -15,14 +15,20 @@
 
 #include "Framework/runDataProcessing.h"
 #include "Framework/AnalysisTask.h"
+#include "Framework/ASoAHelpers.h"
+#include "Framework/HistogramRegistry.h"
 
 #include "Common/DataModel/EventSelection.h"
 #include "Common/DataModel/Centrality.h"
-
 #include "Common/DataModel/TrackSelectionTables.h"
 #include "Common/DataModel/CaloClusters.h"
 
-#include "Framework/ASoAHelpers.h"
+#include <DataFormatsPHOS/BadChannelsMap.h>
+
+#include "CCDB/BasicCCDBManager.h"
+
+#include <cstdio>
+#include <string>
 
 using namespace o2;
 using namespace o2::framework;
@@ -71,7 +77,8 @@ struct TracksPerCollision {
   }
 };
 
-struct SingleCluster {
+struct PhotonsTest {
+
   // configure filters
   Configurable<int> ncellMin{"ncellMin", 3, "minimum number of cells in a cluster"};
   Configurable<float> enMin{"enMin", 0.3f, "minimum cluster energy in GeV"};
@@ -91,14 +98,32 @@ struct SingleCluster {
   OutputObj<TH2F> hmass{TH2F("hmass", "invariant mass;m_{inv};E_{1}+E_{2}", 750, 0.f, 0.75f, 200, 0.f, 20.f)};
   OutputObj<TH2F> hmassMix{TH2F("hmassMix", "mixed invariant mass;m_{inv};E_{1}+E_{2}", 750, 0.f, 0.75f, 200, 0.f, 20.f)};
   OutputObj<TH1F> hcent{TH1F("hcent", "collision centrality", 100, 0.f, 100.f)};
+  OutputObj<TH1F> hdistTrack{(TH1F("hdistTrack", "distance to the closes track", 500, 0.f, 50.f))};
+
+  HistogramRegistry moduleHists{"Module histograms"};
+
+
+  void init(o2::framework::InitContext const&)
+  {
+    for (int i = 0; i < int(5); i ++) {
+       moduleHists.add(Form("mHistXZ_mod%d", i+1), "cluster occupancy", 
+		       HistType::kTH2F, 
+		       {{64, -72., 72., "x", "x (cm)"}, 
+		       {56, -63., 63., "z", "z (cm)"}});
+    }
+  }
   
   std::deque<aod::CaloClusters>  eventsCache = {};
   
   // loop over clusters
+//  void process(soa::Join<aod::Collisions, aod::EvSels, aod::CentFT0Ms>::iterator const& collision,
   void process(soa::Join<aod::Collisions, aod::EvSels, aod::CentFT0Ms>::iterator const& collision,
-	        filteredCaloClusters const& clusters)
+                filteredCaloClusters const& clusters)
   {
     if (!collision.sel8()) return;
+    
+//    auto bc = collision.bc_as<aod::BCsWithTimestamps>();
+//    LOG(info) << "timestamp: " << bc.timestamp();
 
     hcent->Fill(collision.centFT0M());
 
@@ -113,6 +138,20 @@ struct SingleCluster {
       timeCluster->Fill(clu.time()/1.e-9);
       mod->Fill(clu.mod());
       ncell->Fill(clu.ncell());
+      hdistTrack->Fill(clu.trackdist());
+      int imod = clu.mod();
+      switch (imod) {
+	 case 1:      
+           moduleHists.fill(HIST("mHistXZ_mod1"), clu.x(), clu.z());
+	 case 2:      
+           moduleHists.fill(HIST("mHistXZ_mod2"), clu.x(), clu.z());
+	 case 3:      
+           moduleHists.fill(HIST("mHistXZ_mod3"), clu.x(), clu.z());
+	 case 4:      
+           moduleHists.fill(HIST("mHistXZ_mod4"), clu.x(), clu.z());
+	 default:
+	   break;
+      }
     }
    
     for (auto& [clu1, clu2] : combinations(soa::CombinationsStrictlyUpperIndexPolicy(clusters, clusters))) {
@@ -148,6 +187,6 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
     adaptAnalysisTask<SingleTracks>(cfgc),
     adaptAnalysisTask<SingleTracks2>(cfgc),
     adaptAnalysisTask<TracksPerCollision>(cfgc),
-    adaptAnalysisTask<SingleCluster>(cfgc),
+    adaptAnalysisTask<PhotonsTest>(cfgc),
   };
 }
