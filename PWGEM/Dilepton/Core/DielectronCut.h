@@ -17,7 +17,6 @@
 #define PWGEM_DILEPTON_CORE_DIELECTRONCUT_H_
 
 #include "PWGEM/Dilepton/Utils/EMTrackUtilities.h"
-#include "PWGEM/Dilepton/Utils/MlResponseDielectronSingleTrack.h"
 #include "PWGEM/Dilepton/Utils/PairUtilities.h"
 
 #include "CommonConstants/PhysicsConstants.h"
@@ -417,6 +416,7 @@ class DielectronCut : public TNamed
 
       case DielectronCuts::kTrackPhiPositionRange: {
         float phiPosition = track.phi() + std::asin(-0.30282 * track.sign() * (mBz * 0.1) * mRefR / (2.f * track.pt()));
+        phiPosition = RecoDecay::constrainAngle(phiPosition, 0, 1U); // 0-2pi
 
         if (mMinTrackPhiPosition < 0.f && mMaxTrackPhiPosition < M_PI) { // threshold across 0 rad.
           o2::math_utils::bringToPMPi(phiPosition);
@@ -547,10 +547,10 @@ class DielectronCut : public TNamed
   void IncludeITSsa(bool flag, float maxpt);
   void EnableTTCA(bool flag);
 
-  void SetPIDMlResponse(o2::analysis::MlResponseDielectronSingleTrack<float>* mlResponse)
-  {
-    mPIDMlResponse = mlResponse;
-  }
+  // void SetPIDMlResponse(o2::analysis::MlResponseDielectronSingleTrack<float>* mlResponse)
+  // {
+  //   mPIDMlResponse = mlResponse;
+  // }
 
   void SetMLThresholds(const std::vector<float> bins, const std::vector<float> cuts)
   {
@@ -646,7 +646,7 @@ class DielectronCut : public TNamed
   // float mMinP_ITSNsigmaKa{0.0}, mMaxP_ITSNsigmaKa{0.0};
   // float mMinP_ITSNsigmaPr{0.0}, mMaxP_ITSNsigmaPr{0.0};
 
-  o2::analysis::MlResponseDielectronSingleTrack<float>* mPIDMlResponse{nullptr};
+  // o2::analysis::MlResponseDielectronSingleTrack<float>* mPIDMlResponse{nullptr};
   std::vector<float> mMLBins{}; // binning for a feature variable. e.g. tpcInnerParam
   std::vector<float> mMLCuts{}; // threshold for each bin. mMLCuts.size() must be mMLBins.size()-1.
 

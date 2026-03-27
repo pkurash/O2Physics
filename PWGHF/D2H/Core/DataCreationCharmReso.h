@@ -22,14 +22,15 @@
 #define HomogeneousField // needed for KFParticle::SetField(magneticField);
 #endif
 
-#include "PWGEM/Dilepton/Utils/PairUtilities.h"
-#include "PWGEM/PhotonMeson/Utils/PCMUtilities.h"
-#include "PWGEM/PhotonMeson/Utils/TrackSelection.h"
 #include "PWGHF/Core/CentralityEstimation.h"
 #include "PWGHF/Core/DecayChannels.h"
 #include "PWGHF/Core/HfHelper.h"
 #include "PWGHF/Utils/utilsEvSelHf.h"
 #include "PWGHF/Utils/utilsMcMatching.h"
+
+//
+#include "PWGEM/PhotonMeson/Utils/PCMUtilities.h"
+#include "PWGEM/PhotonMeson/Utils/TrackSelection.h"
 
 #include "Common/Core/RecoDecay.h"
 #include "Common/Core/TPCVDriftManager.h"
@@ -43,7 +44,9 @@
 #include <Framework/Configurable.h>
 #include <Framework/HistogramRegistry.h>
 #include <Framework/HistogramSpec.h>
+#include <Framework/Logger.h>
 #include <Framework/O2DatabasePDGPlugin.h>
+#include <ReconstructionDataFormats/PID.h>
 
 #include <TH1.h>
 #include <TPDGCode.h>
@@ -60,8 +63,6 @@
 #include <cstdint>
 #include <map>
 #include <string>
-#include <type_traits>
-#include <unordered_map>
 #include <vector>
 
 namespace o2::analysis
@@ -249,7 +250,7 @@ void addHistograms(o2::framework::HistogramRegistry& registry)
   registry.add("hMassVsPtK0s", "K0^{s} candidates;#it{p}_{T} (GeV/#it{c});inv. mass (#pi^{#plus}#pi^{#minus}) (GeV/#it{c}^{2});entries", {o2::framework::HistType::kTH2D, {axisPt, axisMassKzero}});
   registry.add("hMassVsPtLambda", "Lambda candidates;#it{p}_{T} (GeV/#it{c});inv. mass (p #pi^{#minus}) (GeV/#it{c}^{2});entries", {o2::framework::HistType::kTH2D, {axisPt, axisMassLambda}});
   registry.add("hAP", "Aremnteros-Podolanski plot for V0 candidates;#it{#alpha};#it{q}_{T} (GeV/#it{c});entries", {o2::framework::HistType::kTH2D, {axisAlpha, axisQt}});
-  registry.add("hRadius", "Radius of V0 candidates;#it{R} (cm);entries", {o2::framework::HistType::kTH1D, {axisRadius}});
+  registry.add("hV0Radius", "Radius of V0 candidates;#it{R} (cm);entries", {o2::framework::HistType::kTH1D, {axisRadius}});
   registry.add("hdEdxVsP", "Tracks;#it{p} (GeV/#it{c});d#it{E}/d#it{x};entries", {o2::framework::HistType::kTH2D, {axisP, axisDeDx}});
 
   if constexpr (DType == DMesonType::D0) {
