@@ -13,12 +13,16 @@
 /// \author
 /// \since
 
-#include "Framework/runDataProcessing.h"
-#include "Framework/AnalysisTask.h"
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/runDataProcessing.h>
+
 #include "Framework/HistogramRegistry.h"
 #include <TParameter.h>
 
 #include "Framework/StaticFor.h"
+
+#include <cstddef>
 
 using namespace o2;
 using namespace o2::framework;

@@ -14,36 +14,48 @@
 /// \author Mario Ciacco <mario.ciacco@cern.ch>
 
 #include "PWGLF/DataModel/LFEbyeTables.h"
-#include "PWGLF/DataModel/LFStrangenessTables.h"
 
-#include "Common/Core/PID/PIDTOF.h"
-#include "Common/Core/PID/TPCPIDResponse.h"
+#include "Common/CCDB/EventSelectionParams.h"
+#include "Common/CCDB/TriggerAliases.h"
 #include "Common/Core/RecoDecay.h"
 #include "Common/Core/trackUtilities.h"
 #include "Common/DataModel/Centrality.h"
 #include "Common/DataModel/EventSelection.h"
 #include "Common/DataModel/Multiplicity.h"
 #include "Common/DataModel/PIDResponseTOF.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "Common/TableProducer/PID/pidTOFBase.h"
 
-#include "CCDB/BasicCCDBManager.h"
-#include "CCDB/CcdbApi.h"
-#include "DCAFitter/DCAFitterN.h"
-#include "DataFormatsParameters/GRPMagField.h"
-#include "DataFormatsParameters/GRPObject.h"
-#include "MathUtils/BetheBlochAleph.h"
-#include "DetectorsBase/GeometryManager.h"
-#include "DetectorsBase/Propagator.h"
-#include "Framework/ASoAHelpers.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/runDataProcessing.h"
-#include "ReconstructionDataFormats/Track.h"
+#include <CCDB/BasicCCDBManager.h>
+#include <CCDB/CcdbApi.h>
+#include <CommonConstants/PhysicsConstants.h>
+#include <DCAFitter/DCAFitterN.h>
+#include <DataFormatsParameters/GRPMagField.h>
+#include <DataFormatsParameters/GRPObject.h>
+#include <DetectorsBase/Propagator.h>
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Array2D.h>
+#include <Framework/Configurable.h>
+#include <Framework/DataTypes.h>
+#include <Framework/HistogramRegistry.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/OutputObjHeader.h>
+#include <Framework/runDataProcessing.h>
+#include <MathUtils/BetheBlochAleph.h>
 
-#include "TFormula.h"
+#include <TH1.h>
+#include <TH2.h>
+#include <TH3.h>
+#include <TPDGCode.h>
+
+#include <Rtypes.h>
 
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <random>
 #include <string>
@@ -61,7 +73,19 @@ using BCsWithRun2Info = soa::Join<aod::BCs, aod::Run2BCInfos, aod::Timestamps>;
 namespace
 {
 constexpr int kNpart = 2;
-constexpr float kTrackSels[12]{/* 60, */ 80, 100, 2, 3, /* 4,  */ 0.05, 0.1, /* 0.15,  */ 0.5, 1, /* 1.5, */ 2, 3 /* , 4 */, 2, 3, /*, 4 */};
+constexpr float kTrackSels[12]{/* 60, */ 80,
+                               100,
+                               2,
+                               3,
+                               /* 4,  */ 0.05,
+                               0.1,
+                               /* 0.15,  */ 0.5,
+                               1,
+                               /* 1.5, */ 2,
+                               3 /* , 4 */,
+                               2,
+                               3,
+                               /*, 4 */};
 constexpr float kDcaSelsParam[3][3]{{-1.e32, -1.e32, -1.e32}, {-1.e32, -1.e32, -1.e32}, {-1.e32, -1.e32, -1.e32}};
 constexpr double kBetheBlochDefault[kNpart][6]{{-1.e32, -1.e32, -1.e32, -1.e32, -1.e32, -1.e32}, {-1.e32, -1.e32, -1.e32, -1.e32, -1.e32, -1.e32}};
 constexpr double kBetheBlochDefaultITS[6]{-1.e32, -1.e32, -1.e32, -1.e32, -1.e32, -1.e32};
@@ -227,6 +251,7 @@ struct EbyeMaker {
   Configurable<float> etaMax{"etaMax", 0.8f, "maximum eta"};
   Configurable<float> etaMaxV0dau{"etaMaxV0dau", 0.8f, "maximum eta V0 daughters"};
   Configurable<float> outerPIDMin{"outerPIDMin", -4.f, "minimum outer PID"};
+  Configurable<int> centEst{"centEst", 1, "for Run 3: 0 -> FT0C, 1 -> FT0M"};
 
   Configurable<uint8_t> countOnlyLSTrk{"countOnlyLSTrk", 0, "count only like sign tracks in Ntracks: 0 -> +ve and -ve; 1 -> -ve; 2 -> +ve"};
   Configurable<bool> useAllEvSel{"useAllEvSel", false, "use additional event selections fo run 3 analyses"};
@@ -234,6 +259,7 @@ struct EbyeMaker {
   Configurable<bool> kINT7Intervals{"kINT7Intervals", false, "toggle kINT7 trigger selection in the 10-30% and 50-90% centrality intervals (2018 Pb-Pb)"};
   Configurable<bool> kUsePileUpCut{"kUsePileUpCut", false, "toggle strong correlation cuts (Run 2)"};
   Configurable<bool> kUseEstimatorsCorrelationCut{"kUseEstimatorsCorrelationCut", false, "toggle cut on the correlation between centrality estimators (2018 Pb-Pb)"};
+  Configurable<bool> kUsePID{"kUsePID", true, "use PID information in the analysis"};
 
   Configurable<float> kCentCutMax{"kCentCutMax", 100, "maximum accepted centrality"};
 
@@ -538,7 +564,7 @@ struct EbyeMaker {
     // event QA
     histos.add<TH1>("QA/zVtx", ";#it{z}_{vtx} (cm);Entries", HistType::kTH1F, {zVtxAxis});
     if (doprocessRun3) {
-      histos.add<TH2>("QA/PvMultVsCent", ";Centrality FT0C (%);#it{N}_{tracks};", HistType::kTH2F, {centAxis, multAxis});
+      histos.add<TH2>("QA/PvMultVsCent", ";Centrality (%);#it{N}_{tracks};", HistType::kTH2F, {centAxis, multAxis});
     } else if (doprocessRun2 || doprocessMiniRun2 || doprocessMcRun2 || doprocessMiniMcRun2) {
       histos.add<TH2>("QA/V0MvsCL0", ";Centrality CL0 (%);Centrality V0M (%)", HistType::kTH2F, {centAxis, centAxis});
       histos.add<TH2>("QA/trackletsVsV0M", ";Centrality CL0 (%);Centrality V0M (%)", HistType::kTH2F, {centAxis, multAxis});
@@ -813,7 +839,8 @@ struct EbyeMaker {
         }
         if (mcLab.has_mcParticle()) {
           auto mcTrack = mcLab.template mcParticle_as<aod::McParticles>();
-          if (std::abs(mcTrack.pdgCode()) != kPartPdg[iP])
+          auto pdgCode = mcTrack.pdgCode();
+          if ((std::abs(pdgCode) != kPartPdg[iP] && kUsePID) || ((std::abs(pdgCode) == PDG_t::kPiPlus || std::abs(pdgCode) == PDG_t::kElectron || std::abs(pdgCode) == PDG_t::kMuonMinus || std::abs(pdgCode) == PDG_t::kKPlus || std::abs(pdgCode) == PDG_t::kProton) && !kUsePID))
             continue;
           if ((((mcTrack.flags() & 0x8) || (mcTrack.flags() & 0x2)) && (doprocessMcRun2 || doprocessMiniMcRun2)) || ((mcTrack.flags() & 0x1) && !doprocessMiniMcRun2))
             continue;
@@ -822,7 +849,7 @@ struct EbyeMaker {
             continue;
           if (mcTrack.isPhysicalPrimary())
             candidateTrack.pdgcodemoth = PartTypes::kPhysPrim;
-          else if (mcTrack.has_mothers() && iP == 0)
+          else if (mcTrack.has_mothers() && iP == 0 && kUsePID)
             candidateTrack.pdgcodemoth = getPartTypeMother(mcTrack);
 
           auto genPt = std::hypot(mcTrack.px(), mcTrack.py());
@@ -881,8 +908,9 @@ struct EbyeMaker {
         continue;
       auto pdgCode = mcPart.pdgCode();
       auto genPt = std::hypot(mcPart.px(), mcPart.py());
+      int ch = 0;
       if ((std::abs(pdgCode) == PDG_t::kPiPlus || std::abs(pdgCode) == PDG_t::kElectron || std::abs(pdgCode) == PDG_t::kMuonMinus || std::abs(pdgCode) == PDG_t::kKPlus || std::abs(pdgCode) == PDG_t::kProton) && mcPart.isPhysicalPrimary() && genPt > ptMin[0] && genPt < ptMax[0]) {
-        int ch = (pdgCode == PDG_t::kPiPlus || pdgCode == -PDG_t::kElectron || pdgCode == -PDG_t::kMuonMinus || pdgCode == PDG_t::kKPlus || pdgCode == PDG_t::kProton) ? 1 : -1;
+        ch = (pdgCode == PDG_t::kPiPlus || pdgCode == -PDG_t::kElectron || pdgCode == -PDG_t::kMuonMinus || pdgCode == PDG_t::kKPlus || pdgCode == PDG_t::kProton) ? 1 : -1;
         if ((ch < 0 && countOnlyLSTrk == TracksCharge::kNegative) || (ch > 0 && countOnlyLSTrk == TracksCharge::kPositive) || (countOnlyLSTrk == TracksCharge::kAll))
           nChPartGen++;
       }
@@ -910,9 +938,9 @@ struct EbyeMaker {
           LOGF(debug, "not found!");
           candidateV0s.emplace_back(candV0);
         }
-      } else if (std::abs(pdgCode) == kPartPdg[0] || std::abs(pdgCode) == kPartPdg[1]) {
+      } else if (((std::abs(pdgCode) == kPartPdg[0] || std::abs(pdgCode) == kPartPdg[1]) && kUsePID) || (std::abs(ch) == 1 && !kUsePID)) {
         int iP = 1;
-        if (std::abs(pdgCode) == kPartPdg[0]) {
+        if ((std::abs(pdgCode) == kPartPdg[0] && kUsePID) || !kUsePID) {
           iP = 0;
         }
         if ((!mcPart.isPhysicalPrimary() && !doprocessMiniMcRun2))
@@ -924,7 +952,7 @@ struct EbyeMaker {
         candTrack.pdgcode = pdgCode;
         if (mcPart.isPhysicalPrimary())
           candTrack.pdgcodemoth = PartTypes::kPhysPrim;
-        else if (mcPart.has_mothers() && iP == 0)
+        else if (mcPart.has_mothers() && iP == 0 && kUsePID)
           candTrack.pdgcodemoth = getPartTypeMother(mcPart);
 
         auto it = find_if(candidateTracks[iP].begin(), candidateTracks[iP].end(), [&](CandidateTrack trk) { return trk.mcIndex == mcPart.globalIndex(); });
@@ -937,7 +965,7 @@ struct EbyeMaker {
     }
   }
 
-  void processRun3(soa::Join<aod::Collisions, aod::EvSels, aod::CentFT0Cs> const& collisions, TracksFullIUPID const& tracks, aod::V0s const& V0s, aod::BCsWithTimestamps const&)
+  void processRun3(soa::Join<aod::Collisions, aod::EvSels, aod::CentFT0Ms, aod::CentFT0Cs> const& collisions, TracksFullIUPID const& tracks, aod::V0s const& V0s, aod::BCsWithTimestamps const&)
   {
     for (const auto& collision : collisions) {
       auto bc = collision.bc_as<aod::BCsWithTimestamps>();
@@ -946,7 +974,7 @@ struct EbyeMaker {
       if (std::abs(collision.posZ()) > zVtxMax || !collision.selection_bit(aod::evsel::kNoITSROFrameBorder) || !collision.selection_bit(aod::evsel::kNoTimeFrameBorder) || !collision.selection_bit(aod::evsel::kIsTriggerTVX) || ((!collision.selection_bit(aod::evsel::kIsGoodITSLayersAll) || !collision.selection_bit(aod::evsel::kNoSameBunchPileup) || !collision.selection_bit(aod::evsel::kIsGoodZvtxFT0vsPV)) && useAllEvSel))
         continue;
 
-      auto centrality = collision.centFT0C();
+      auto centrality = centEst == 0 ? collision.centFT0C() : collision.centFT0M();
       if (centrality > kCentCutMax)
         continue;
 
@@ -1100,7 +1128,7 @@ struct EbyeMaker {
   }
   PROCESS_SWITCH(EbyeMaker, processMiniRun2, "process mini tables(Run 2)", false);
 
-  void processMcRun3(soa::Join<aod::Collisions, aod::McCollisionLabels, aod::EvSels, aod::CentFT0Cs> const& collisions, aod::McCollisions const& /*mcCollisions*/, TracksFullIUPID const& tracks, aod::V0s const& V0s, aod::McParticles const& mcParticles, aod::McTrackLabels const& mcLab, aod::BCsWithTimestamps const&)
+  void processMcRun3(soa::Join<aod::Collisions, aod::McCollisionLabels, aod::EvSels, aod::CentFT0Ms, aod::CentFT0Cs> const& collisions, aod::McCollisions const& /*mcCollisions*/, TracksFullIUPID const& tracks, aod::V0s const& V0s, aod::McParticles const& mcParticles, aod::McTrackLabels const& mcLab, aod::BCsWithTimestamps const&)
   {
     for (const auto& collision : collisions) {
       auto bc = collision.bc_as<aod::BCsWithTimestamps>();
@@ -1109,7 +1137,7 @@ struct EbyeMaker {
       if (std::abs(collision.posZ()) > zVtxMax || !collision.selection_bit(aod::evsel::kNoTimeFrameBorder) || !collision.selection_bit(aod::evsel::kIsTriggerTVX) || ((!collision.selection_bit(aod::evsel::kIsGoodITSLayersAll) || !collision.selection_bit(aod::evsel::kNoSameBunchPileup) || !collision.selection_bit(aod::evsel::kIsGoodZvtxFT0vsPV)) && useAllEvSel))
         continue;
 
-      auto centrality = collision.centFT0C();
+      auto centrality = centEst == 0 ? collision.centFT0C() : collision.centFT0M();
 
       histos.fill(HIST("QA/zVtx"), collision.posZ());
 

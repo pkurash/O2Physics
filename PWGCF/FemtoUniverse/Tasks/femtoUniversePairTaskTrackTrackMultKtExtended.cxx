@@ -17,6 +17,7 @@
 /// \author Zuzanna Chochulska, WUT Warsaw & CTU Prague, zchochul@cern.ch
 /// \author Alicja Płachta, WUT Warsaw, alicja.plachta.stud@pw.edu.pl
 
+#include "PWGCF/FemtoUniverse/Core/FemtoUniverseContainer.h"
 #include "PWGCF/FemtoUniverse/Core/FemtoUniverseDetaDphiStar.h"
 #include "PWGCF/FemtoUniverse/Core/FemtoUniverseEventHisto.h"
 #include "PWGCF/FemtoUniverse/Core/FemtoUniverseFemtoContainer.h"
@@ -27,15 +28,29 @@
 #include "PWGCF/FemtoUniverse/Core/FemtoUniverseTrackSelection.h"
 #include "PWGCF/FemtoUniverse/DataModel/FemtoDerived.h"
 
-#include "Framework/ASoAHelpers.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/HistogramRegistry.h"
-#include "Framework/O2DatabasePDGPlugin.h"
-#include "Framework/runDataProcessing.h"
-#include "ReconstructionDataFormats/PID.h"
+#include <Framework/ASoA.h>
+#include <Framework/ASoAHelpers.h>
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Array2D.h>
+#include <Framework/BinningPolicy.h>
+#include <Framework/Configurable.h>
+#include <Framework/Expressions.h>
+#include <Framework/HistogramRegistry.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/O2DatabasePDGPlugin.h>
+#include <Framework/OutputObjHeader.h>
+#include <Framework/SliceCache.h>
+#include <Framework/runDataProcessing.h>
+#include <ReconstructionDataFormats/PID.h>
 
-#include "TRandom2.h"
+#include <TRandom2.h>
 
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -73,6 +88,8 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
     Configurable<bool> confIsMC{"confIsMC", false, "Enable additional Histogramms in the case of a MonteCarlo Run"};
     Configurable<std::vector<float>> confTrkPIDnSigmaMax{"confTrkPIDnSigmaMax", std::vector<float>{4.f, 3.f, 2.f}, "This configurable needs to be the same as the one used in the producer task"};
     Configurable<bool> confUse3D{"confUse3D", false, "Enable three dimensional histogramms (to be used only for analysis with high statistics): k* vs mT vs multiplicity"};
+    Configurable<bool> confOnlyPrimaryMCPair{"confOnlyPrimaryMCPair", false, "Fill MC pair histograms only with primary particles"};
+
   } twotracksconfigs;
 
   using FemtoFullParticles = soa::Join<aod::FDParticles, aod::FDExtParticles>;
@@ -188,6 +205,13 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
   Configurable<bool> cfgProcessMultBins{"cfgProcessMultBins", false, "Process kstar histograms (in multiplicity bins)"};
   Configurable<bool> cfgProcessKtBins{"cfgProcessKtBins", false, "Process kstar histograms in kT bins (if 'cfgProcessMultBins' is false, it will not be processed regardless of 'cfgProcessKtBins' state)"};
   Configurable<bool> cfgProcessKtMt3DCF{"cfgProcessKtMt3DCF", false, "Process 3D histograms in kT and MultBins"};
+
+  Configurable<bool> confRejectGammaPair{"confRejectGammaPair", false, "Additional check to reject e+e- pairs base on theta and minv"};
+  Configurable<double> confMaxEEMinv{"confMaxEEMinv", 0.002, "Max. minv of e-e+ pair for gamma pair rejection"};
+  Configurable<double> confMaxDTheta{"confMaxDTheta", 0.008, "Max. DeltaTheta of pair for gamma pair rejection"};
+
+  ConfigurableAxis confDeltaEtaAxis{"confDeltaEtaAxis", {100, -0.15, 0.15}, "DeltaEta"};
+  ConfigurableAxis confDeltaPhiStarAxis{"confDeltaPhiStarAxis", {100, -0.15, 0.15}, "DeltaPhiStar"};
 
   FemtoUniverseFemtoContainer<femto_universe_femto_container::EventType::same, femto_universe_femto_container::Observable::kstar> sameEventCont;
   FemtoUniverseFemtoContainer<femto_universe_femto_container::EventType::mixed, femto_universe_femto_container::Observable::kstar> mixedEventCont;
@@ -334,6 +358,8 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
 
   void init(InitContext&)
   {
+    colBinning = ColumnBinningPolicy<aod::collision::PosZ, aod::femtouniversecollision::MultV0M>{{confVtxBins, confMultBins}, true};
+
     eventHisto.init(&qaRegistry);
 
     trackHistoPartOne.init(&qaRegistry, confTempFitVarpTBins, confTempFitVarBins, twotracksconfigs.confIsMC, trackonefilter.confPDGCodePartOne, true);
@@ -412,7 +438,7 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
 
     pairCleaner.init(&qaRegistry);
     if (confIsCPR.value) {
-      pairCloseRejection.init(&resultRegistry, &qaRegistry, confCPRdeltaPhiCutMin.value, confCPRdeltaPhiCutMax.value, confCPRdeltaEtaCutMin.value, confCPRdeltaEtaCutMax.value, confCPRChosenRadii.value, confCPRPlotPerRadii.value);
+      pairCloseRejection.init(&resultRegistry, &qaRegistry, confDeltaEtaAxis, confDeltaPhiStarAxis, confCPRdeltaPhiCutMin.value, confCPRdeltaPhiCutMax.value, confCPRdeltaEtaCutMin.value, confCPRdeltaEtaCutMax.value, confCPRChosenRadii.value, confCPRPlotPerRadii.value);
     }
 
     vPIDPartOne = trackonefilter.confPIDPartOne.value;
@@ -480,6 +506,15 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
           continue;
         }
 
+        if (confRejectGammaPair && pairCloseRejection.isGammaPair(p1, p2, confMaxEEMinv, confMaxDTheta)) {
+          continue;
+        }
+
+        // track cleaning
+        if (!pairCleaner.isCleanPair(p1, p2, parts)) {
+          continue;
+        }
+
         if (confIsCPR.value) {
           double rand;
           auto part1 = p1;
@@ -500,15 +535,10 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
           }
         }
 
-        // track cleaning
-        if (!pairCleaner.isCleanPair(p1, p2, parts)) {
-          continue;
-        }
-
         float kstar = FemtoUniverseMath::getkstar(p1, mass1, p2, mass2);
         float kT = FemtoUniverseMath::getkT(p1, mass1, p2, mass2);
 
-        sameEventCont.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D);
+        sameEventCont.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D, twotracksconfigs.confOnlyPrimaryMCPair);
         if (cfgProcessMultBins)
           sameEventMultCont.fill<float>(kstar, multCol, kT);
       }
@@ -555,14 +585,14 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
               float kstar = FemtoUniverseMath::getkstar(p1, mass1, p2, mass1);
               float kT = FemtoUniverseMath::getkT(p1, mass1, p2, mass1);
 
-              sameEventContPP.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D);
+              sameEventContPP.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D, twotracksconfigs.confOnlyPrimaryMCPair);
               if (cfgProcessMultBins)
                 sameEventMultContPP.fill<float>(kstar, multCol, kT);
             } else {
               float kstar = FemtoUniverseMath::getkstar(p1, mass1, p2, mass2);
               float kT = FemtoUniverseMath::getkT(p1, mass1, p2, mass2);
 
-              sameEventContPP.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D);
+              sameEventContPP.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D, twotracksconfigs.confOnlyPrimaryMCPair);
               if (cfgProcessMultBins)
                 sameEventMultContPP.fill<float>(kstar, multCol, kT);
             }
@@ -575,14 +605,14 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
               float kstar = FemtoUniverseMath::getkstar(p1, mass2, p2, mass2);
               float kT = FemtoUniverseMath::getkT(p1, mass2, p2, mass2);
 
-              sameEventContMM.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D);
+              sameEventContMM.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D, twotracksconfigs.confOnlyPrimaryMCPair);
               if (cfgProcessMultBins)
                 sameEventMultContMM.fill<float>(kstar, multCol, kT);
             } else {
               float kstar = FemtoUniverseMath::getkstar(p1, mass1, p2, mass2);
               float kT = FemtoUniverseMath::getkT(p1, mass1, p2, mass2);
 
-              sameEventContMM.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D);
+              sameEventContMM.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D, twotracksconfigs.confOnlyPrimaryMCPair);
               if (cfgProcessMultBins)
                 sameEventMultContMM.fill<float>(kstar, multCol, kT);
             }
@@ -673,6 +703,10 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
         continue;
       }
 
+      if (confRejectGammaPair && pairCloseRejection.isGammaPair(p1, p2, confMaxEEMinv, confMaxDTheta)) {
+        continue;
+      }
+
       if (confIsCPR.value) {
         double rand;
         auto part1 = p1;
@@ -698,7 +732,7 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
           float kstar = FemtoUniverseMath::getkstar(p1, mass1, p2, mass2);
           float kT = FemtoUniverseMath::getkT(p1, mass1, p2, mass2);
 
-          mixedEventCont.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D);
+          mixedEventCont.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D, twotracksconfigs.confOnlyPrimaryMCPair);
           if (cfgProcessMultBins)
             mixedEventMultCont.fill<float>(kstar, multCol, kT);
 
@@ -709,14 +743,14 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
             float kstar = FemtoUniverseMath::getkstar(p1, mass1, p2, mass1);
             float kT = FemtoUniverseMath::getkT(p1, mass1, p2, mass1);
 
-            mixedEventContPP.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D);
+            mixedEventContPP.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D, twotracksconfigs.confOnlyPrimaryMCPair);
             if (cfgProcessMultBins)
               mixedEventMultContPP.fill<float>(kstar, multCol, kT);
           } else {
             float kstar = FemtoUniverseMath::getkstar(p1, mass1, p2, mass2);
             float kT = FemtoUniverseMath::getkT(p1, mass1, p2, mass2);
 
-            mixedEventContPP.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D);
+            mixedEventContPP.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D, twotracksconfigs.confOnlyPrimaryMCPair);
             if (cfgProcessMultBins)
               mixedEventMultContPP.fill<float>(kstar, multCol, kT);
           }
@@ -729,14 +763,14 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
             float kstar = FemtoUniverseMath::getkstar(p1, mass2, p2, mass2);
             float kT = FemtoUniverseMath::getkT(p1, mass2, p2, mass2);
 
-            mixedEventContMM.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D);
+            mixedEventContMM.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D, twotracksconfigs.confOnlyPrimaryMCPair);
             if (cfgProcessMultBins)
               mixedEventMultContMM.fill<float>(kstar, multCol, kT);
           } else {
             float kstar = FemtoUniverseMath::getkstar(p1, mass1, p2, mass2);
             float kT = FemtoUniverseMath::getkT(p1, mass1, p2, mass2);
 
-            mixedEventContMM.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D);
+            mixedEventContMM.setPair<isMC>(p1, p2, multCol, twotracksconfigs.confUse3D, twotracksconfigs.confOnlyPrimaryMCPair);
             if (cfgProcessMultBins)
               mixedEventMultContMM.fill<float>(kstar, multCol, kT);
           }
@@ -755,7 +789,7 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
   void processMixedEvent(soa::Filtered<o2::aod::FdCollisions> const& cols,
                          FilteredFemtoFullParticles const& parts)
   {
-    for (const auto& [collision1, collision2] : soa::selfCombinations(colBinning, 5, -1, cols, cols)) {
+    for (const auto& [collision1, collision2] : soa::selfCombinations(colBinning, confNEventsMix, -1, cols, cols)) {
 
       const int multiplicityCol = collision1.multV0M();
       if (confFillDebug) {
@@ -796,7 +830,7 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
                            FemtoRecoParticles const& parts,
                            o2::aod::FdMCParticles const&)
   {
-    for (const auto& [collision1, collision2] : soa::selfCombinations(colBinning, 5, -1, cols, cols)) {
+    for (const auto& [collision1, collision2] : soa::selfCombinations(colBinning, confNEventsMix, -1, cols, cols)) {
 
       const int multiplicityCol = collision1.multV0M();
       if (confFillDebug) {
@@ -905,7 +939,7 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
       }
     };
 
-    for (const auto& [collision1, collision2] : soa::selfCombinations(colBinning, 5, -1, cols, cols)) {
+    for (const auto& [collision1, collision2] : soa::selfCombinations(colBinning, confNEventsMix, -1, cols, cols)) {
       const int multiplicityCol = collision1.multV0M();
       if (confFillDebug) {
         mixQaRegistry.fill(HIST("MixingQA/hMECollisionBins"), colBinning.getBin({collision1.posZ(), multiplicityCol}));
@@ -1000,7 +1034,7 @@ struct FemtoUniversePairTaskTrackTrackMultKtExtended {
   void processFractionsMCTruth(o2::aod::FdCollisions const& cols,
                                FemtoTruthParticles const&)
   {
-    for (const auto& [collision1, collision2] : soa::selfCombinations(colBinning, 5, -1, cols, cols)) {
+    for (const auto& [collision1, collision2] : soa::selfCombinations(colBinning, confNEventsMix, -1, cols, cols)) {
 
       const int multiplicityCol = collision1.multV0M();
       if (confFillDebug) {

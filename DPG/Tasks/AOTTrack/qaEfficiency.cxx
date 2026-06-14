@@ -110,6 +110,8 @@ std::array<std::shared_ptr<TH1>, nParticles> hPtGeneratedRecoEv;
 std::array<std::shared_ptr<TH1>, nParticles> hPtItsPrm;
 std::array<std::shared_ptr<TH1>, nParticles> hPtItsTpcPrm;
 std::array<std::shared_ptr<TH1>, nParticles> hPtTrkItsTpcPrm;
+std::array<std::shared_ptr<TH2>, nParticles> hDeltaPtVsPtTrkItsTpcPrm;
+std::array<std::shared_ptr<TH2>, nParticles> hPtGenVsPtTrkItsTpcPrm;
 std::array<std::shared_ptr<TH1>, nParticles> hPtItsTpcTofPrm;
 std::array<std::shared_ptr<TH1>, nParticles> hPtTrkItsTpcTofPrm;
 std::array<std::shared_ptr<TH1>, nParticles> hPtGeneratedPrm;
@@ -201,6 +203,7 @@ struct QaEfficiency {
   Configurable<bool> numSameCollision{"numSameCollision", false, "Flag to ask that the numerator is in the same collision as the denominator"};
   Configurable<bool> noFakesHits{"noFakesHits", false, "Flag to reject tracks that have fake hits"};
   Configurable<bool> skipEventsWithoutTPCTracks{"skipEventsWithoutTPCTracks", false, "Flag to reject events that have no tracks reconstructed in the TPC"};
+  Configurable<bool> skipParticlesFromBackgroundEvents{"skipParticlesFromBackgroundEvents", false, "Flag to reject particles from background events (for embedded MC)"};
   Configurable<float> maxProdRadius{"maxProdRadius", 9999.f, "Maximum production radius of the particle under study"};
   Configurable<float> nsigmaTPCDe{"nsigmaTPCDe", 3.f, "Value of the Nsigma TPC cut for deuterons PID"};
   // Charge selection
@@ -375,6 +378,8 @@ struct QaEfficiency {
     hPtItsPrm[histogramIndex] = histos.add<TH1>(Form("MC/pdg%i/pt/prm/its", PDGs[histogramIndex]), "ITS tracks (primaries) " + tagPt, kTH1D, {axisPt});
     hPtItsTpcPrm[histogramIndex] = histos.add<TH1>(Form("MC/pdg%i/pt/prm/its_tpc", PDGs[histogramIndex]), "ITS-TPC tracks (primaries) " + tagPt, kTH1D, {axisPt});
     hPtTrkItsTpcPrm[histogramIndex] = histos.add<TH1>(Form("MC/pdg%i/pt/prm/trk/its_tpc", PDGs[histogramIndex]), "ITS-TPC tracks (reco primaries) " + tagPt, kTH1D, {axisPt});
+    hDeltaPtVsPtTrkItsTpcPrm[histogramIndex] = histos.add<TH2>(Form("MC/pdg%i/pt/prm/generated_vs_reco_delta", PDGs[histogramIndex]), "Abs(Gen - Reco) pT vs Gen pT (primaries) " + tagPt, kTH2D, {axisPt, axisPt});
+    hPtGenVsPtTrkItsTpcPrm[histogramIndex] = histos.add<TH2>(Form("MC/pdg%i/pt/prm/generated_vs_reco", PDGs[histogramIndex]), "Reco pT vs Gen pT (primaries) " + tagPt, kTH2D, {axisPt, axisPt});
     hPtItsTpcTofPrm[histogramIndex] = histos.add<TH1>(Form("MC/pdg%i/pt/prm/its_tpc_tof", PDGs[histogramIndex]), "ITS-TPC-TOF tracks (primaries) " + tagPt, kTH1D, {axisPt});
     hPtTrkItsTpcTofPrm[histogramIndex] = histos.add<TH1>(Form("MC/pdg%i/pt/prm/trk/its_tpc_tof", PDGs[histogramIndex]), "ITS-TPC-TOF tracks (reco primaries) " + tagPt, kTH1D, {axisPt});
     hPtGeneratedPrm[histogramIndex] = histos.add<TH1>(Form("MC/pdg%i/pt/prm/generated", PDGs[histogramIndex]), "Generated (primaries) " + tagPt, kTH1D, {axisPt});
@@ -1155,6 +1160,8 @@ struct QaEfficiency {
       if (passedITS && passedTPC) {
         hPtItsTpcPrm[histogramIndex]->Fill(mcParticle.pt());
         hPtTrkItsTpcPrm[histogramIndex]->Fill(track.pt());
+        hDeltaPtVsPtTrkItsTpcPrm[histogramIndex]->Fill(mcParticle.pt(), abs(track.pt() - mcParticle.pt()));
+        hPtGenVsPtTrkItsTpcPrm[histogramIndex]->Fill(mcParticle.pt(), track.pt());
         hEtaItsTpcPrm[histogramIndex]->Fill(mcParticle.eta());
         hEtaTrkItsTpcPrm[histogramIndex]->Fill(track.eta());
         hPhiItsTpcPrm[histogramIndex]->Fill(mcParticle.phi());
@@ -1548,6 +1555,9 @@ struct QaEfficiency {
         histos.fill(countingHisto, trkCutIdxHasMcPart); // Tracks with particles (i.e. no fakes)
       }
       const auto mcParticle = track.mcParticle();
+      if (skipParticlesFromBackgroundEvents && mcParticle.fromBackgroundEvent()) {
+        return false;
+      }
       if (!isInAcceptance<true, doFillHisto>(mcParticle, countingHisto, trkCutIdxHasMcPart)) {
         // 3: pt cut 4: eta cut 5: phi cut 6: y cut
         return false;
@@ -1913,6 +1923,9 @@ struct QaEfficiency {
 
         /// only to fill denominator of ITS-TPC matched primary tracks only in MC events with at least 1 reco. vtx
         for (const auto& particle : groupedMcParticles) { // Particle loop
+          if (skipParticlesFromBackgroundEvents && particle.fromBackgroundEvent()) {
+            continue;
+          }
 
           /// require generated particle in acceptance
           if (!isInAcceptance<true, false>(particle, nullptr)) {
@@ -1968,6 +1981,9 @@ struct QaEfficiency {
       // Loop on particles to fill the denominator
       float dNdEta = 0; // Multiplicity
       for (const auto& mcParticle : groupedMcParticles) {
+        if (skipParticlesFromBackgroundEvents && mcParticle.fromBackgroundEvent()) {
+          continue;
+        }
         if (TMath::Abs(mcParticle.eta()) <= 2.f && !mcParticle.has_daughters()) {
           dNdEta += 1.f;
         }
