@@ -25,6 +25,7 @@
 #include "Common/Core/CollisionTypeHelper.h"
 #include "Common/Core/PID/TPCPIDResponse.h"
 #include "Common/Core/TableHelper.h"
+#include "Common/DataModel/EventSelection.h"
 #include "Common/DataModel/PIDResponseTPC.h"
 #include "Common/TableProducer/PID/pidTPCBase.h" // IWYU pragma: keep
 #include "Tools/ML/model.h"
@@ -32,16 +33,18 @@
 #include <DataFormatsParameters/GRPLHCIFData.h>
 #include <Framework/AnalysisDataModel.h>
 #include <Framework/AnalysisHelpers.h>
+#include <Framework/Concepts.h>
 #include <Framework/Configurable.h>
 #include <Framework/DeviceSpec.h>
+#include <Framework/Logger.h>
 #include <Framework/RunningWorkflowInfo.h>
-#include <Framework/runDataProcessing.h>
 #include <ReconstructionDataFormats/PID.h>
 
 #include <TFile.h>
 #include <TMatrixD.h> // IWYU pragma: keep (do not replace with TMatrixDfwd.h)
 #include <TMatrixDfwd.h>
 #include <TRandom.h>
+#include <TString.h>
 
 #include <chrono>
 #include <cstddef>

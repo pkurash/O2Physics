@@ -54,7 +54,7 @@ using namespace o2::constants::math;
 
 using Alice3Tracks = soa::Join<aod::Tracks, aod::TracksCov, aod::McTrackLabels, aod::TracksDCA, aod::TracksExtraA3>;
 using FullV0Candidates = soa::Join<aod::V0CandidateIndices, aod::V0CandidateCores>;
-using FullCascadeCandidates = soa::Join<aod::StoredCascCores, aod::CascIndices, aod::A3CascadeMcLabels>;
+using FullCascadeCandidates = soa::Join<aod::StoredCascCores, aod::CascIndices, aod::A3CascadeMcLabels, aod::A3XiInnerTofPid, aod::A3XiOuterTofPid, aod::A3OmegaInnerTofPid, aod::A3OmegaOuterTofPid>;
 using FullCollisions = soa::Join<aod::OTFLUTConfigId, aod::Collisions>;
 
 struct Alice3Strangeness {
@@ -117,14 +117,17 @@ struct Alice3Strangeness {
     Configurable<float> posMinPtDepDCAxy{"posMinPtDepDCAxy", 0.f, "[1] in |DCAxy| > [0]+[1]/pT"};
     Configurable<float> posMinConstDCAz{"posMinConstDCAz", -1.f, "[1] in |DCAz| > [0]+[1]/pT"};
     Configurable<float> posMinPtDepDCAz{"posMinPtDepDCAz", 0.f, "[0] in |DCAz| > [0]+[1]/pT"};
+    Configurable<float> posMaxNSigma{"posMaxNSigma", 5.f, "Max NSigma from strangeness tof pid"};
     Configurable<float> negMinConstDCAxy{"negMinConstDCAxy", 0.5f, "[0] in |DCAxy| > [0]+[1]/pT"};
     Configurable<float> negMinPtDepDCAxy{"negMinPtDepDCAxy", 0.f, "[1] in |DCAxy| > [0]+[1]/pT"};
     Configurable<float> negMinConstDCAz{"negMinConstDCAz", -1.f, "[1] in |DCAz| > [0]+[1]/pT"};
     Configurable<float> negMinPtDepDCAz{"negMinPtDepDCAz", 0.f, "[0] in |DCAz| > [0]+[1]/pT"};
+    Configurable<float> negMaxNSigma{"negMaxNSigma", 5.f, "Max NSigma from strangeness tof pid"};
     Configurable<float> bachMinConstDCAxy{"bachMinConstDCAxy", 0.5f, "[0] in |DCAxy| > [0]+[1]/pT"};
     Configurable<float> bachMinPtDepDCAxy{"bachMinPtDepDCAxy", 0.f, "[1] in |DCAxy| > [0]+[1]/pT"};
     Configurable<float> bachMinConstDCAz{"bachMinConstDCAz", -1.f, "[1] in |DCAz| > [0]+[1]/pT"};
     Configurable<float> bachMinPtDepDCAz{"bachMinPtDepDCAz", 0.f, "[0] in |DCAz| > [0]+[1]/pT"};
+    Configurable<float> bachMaxNSigma{"bachMaxNSigma", 5.f, "Max NSigma from strangeness tof pid"};
     Configurable<float> laMaxDauDCA{"laMaxDauDCA", 0.5f, "DCA (cm) between lambda daughters"};
     Configurable<float> laMinDecayRadius{"laMinDecayRadius", 0.5f, "Minimum lambda radius"};
     Configurable<float> laMassWindow{"laMassWindow", 0.5f, "accepted la mass window around PDG mass"};
@@ -141,6 +144,7 @@ struct Alice3Strangeness {
     std::string prefix = "cascadeFlags";
     Configurable<int> analyseCascade{"analyseCascade", 0, "0: Xi, 1: AntiXi, 2: Omega, 3: AntiOmega"};
     Configurable<bool> analyseOnlyTrueCascades{"analyseOnlyTrueCascades", false, "analyse only true cascades from MC"};
+    Configurable<bool> enable2dPlots{"enable2dPlots", false, "enable 2d plots"};
     Configurable<bool> posDCAxy{"posDCAxy", true, "enable posDCAxy selection"};
     Configurable<bool> posDCAz{"posDCAz", false, "enable posDCAz selection"};
     Configurable<bool> negDCAxy{"negDCAxy", true, "enable negDCAxy selection"};
@@ -156,6 +160,10 @@ struct Alice3Strangeness {
     Configurable<bool> cascMaxNormalizedDecayLength{"cascMaxNormalizedDecayLength", true, "enable cascMaxNormalizedDecayLength selection"};
     Configurable<bool> cascMinCosPA{"cascMinCosPA", true, "enable cascMinCosPA selection"};
     Configurable<bool> competingMassRejection{"competingMassRejection", false, "enable competingMassRejection selection"};
+    Configurable<bool> rejectNoInnerTofSignal{"rejectNoInnerTofSignal", false, "reject candidate if track has no signal in tof"};
+    Configurable<bool> rejectNoOuterTofSignal{"rejectNoOuterTofSignal", false, "reject candidate if track has no signal in tof"};
+    Configurable<bool> tofInner{"tofInner", true, "enable particle identification selection"};
+    Configurable<bool> tofOuter{"tofOuter", false, "enable particle identification selection"};
   } cascadeFlags;
 
   uint16_t appliedSelectionCheckMask;
@@ -167,6 +175,10 @@ struct Alice3Strangeness {
   static constexpr float ToMicrons = 1e+4f;
   static constexpr float CtauXi = 4.91f;
   static constexpr float CtauOmega = 2.461f;
+  float nSigmaBachInnerTof{}, nSigmaPosInnerTof{}, nSigmaNegInnerTof{};
+  float nSigmaBachOuterTof{}, nSigmaPosOuterTof{}, nSigmaNegOuterTof{};
+  bool hasBachInnerTof{}, hasPosInnerTof{}, hasNegInnerTof{};
+  bool hasBachOuterTof{}, hasPosOuterTof{}, hasNegOuterTof{};
 
   struct Cascade {
     enum Type { Xi = 0,
@@ -198,6 +210,75 @@ struct Alice3Strangeness {
       }
     }
   } analysedCascade;
+
+  template <typename TCascade>
+  void configureNSigmas(const TCascade& cascade)
+  {
+    const Cascade::Type analysedCascadeType = static_cast<Cascade::Type>(cascadeFlags.analyseCascade.value);
+    switch (analysedCascadeType) {
+      case Cascade::Xi:
+        nSigmaBachInnerTof = cascade.nSigmaInnerTofXiBachPi();
+        nSigmaBachOuterTof = cascade.nSigmaOuterTofXiBachPi();
+        nSigmaPosInnerTof = cascade.nSigmaInnerTofXiPosPr();
+        nSigmaPosOuterTof = cascade.nSigmaOuterTofXiPosPr();
+        nSigmaNegInnerTof = cascade.nSigmaInnerTofXiNegPi();
+        nSigmaNegOuterTof = cascade.nSigmaOuterTofXiNegPi();
+        hasBachInnerTof = cascade.hasInnerTofXiBachPi();
+        hasPosInnerTof = cascade.hasOuterTofXiBachPi();
+        hasNegInnerTof = cascade.hasInnerTofXiPosPr();
+        hasBachOuterTof = cascade.hasOuterTofXiPosPr();
+        hasPosOuterTof = cascade.hasInnerTofXiNegPi();
+        hasNegOuterTof = cascade.hasOuterTofXiNegPi();
+
+        break;
+      case Cascade::AntiXi:
+        nSigmaBachInnerTof = cascade.nSigmaInnerTofXiBachPi();
+        nSigmaBachOuterTof = cascade.nSigmaOuterTofXiBachPi();
+        nSigmaPosInnerTof = cascade.nSigmaInnerTofXiPosPi();
+        nSigmaPosOuterTof = cascade.nSigmaOuterTofXiPosPi();
+        nSigmaNegInnerTof = cascade.nSigmaInnerTofXiNegPr();
+        nSigmaNegOuterTof = cascade.nSigmaOuterTofXiNegPr();
+        hasBachInnerTof = cascade.hasInnerTofXiBachPi();
+        hasPosInnerTof = cascade.hasOuterTofXiBachPi();
+        hasNegInnerTof = cascade.hasInnerTofXiPosPi();
+        hasBachOuterTof = cascade.hasOuterTofXiPosPi();
+        hasPosOuterTof = cascade.hasInnerTofXiNegPr();
+        hasNegOuterTof = cascade.hasOuterTofXiNegPr();
+
+        break;
+      case Cascade::Omega:
+        nSigmaBachInnerTof = cascade.nSigmaInnerTofOmegaBachKa();
+        nSigmaBachOuterTof = cascade.nSigmaOuterTofOmegaBachKa();
+        nSigmaPosInnerTof = cascade.nSigmaInnerTofOmegaPosPr();
+        nSigmaPosOuterTof = cascade.nSigmaOuterTofOmegaPosPr();
+        nSigmaNegInnerTof = cascade.nSigmaInnerTofOmegaNegPi();
+        nSigmaNegOuterTof = cascade.nSigmaOuterTofOmegaNegPi();
+        hasBachInnerTof = cascade.hasInnerTofOmegaBachKa();
+        hasPosInnerTof = cascade.hasOuterTofOmegaBachKa();
+        hasNegInnerTof = cascade.hasInnerTofOmegaPosPr();
+        hasBachOuterTof = cascade.hasOuterTofOmegaPosPr();
+        hasPosOuterTof = cascade.hasInnerTofOmegaNegPi();
+        hasNegOuterTof = cascade.hasOuterTofOmegaNegPi();
+        break;
+      case Cascade::AntiOmega:
+        nSigmaBachInnerTof = cascade.nSigmaInnerTofOmegaBachKa();
+        nSigmaBachOuterTof = cascade.nSigmaOuterTofOmegaBachKa();
+        nSigmaPosInnerTof = cascade.nSigmaInnerTofOmegaPosPi();
+        nSigmaPosOuterTof = cascade.nSigmaOuterTofOmegaPosPi();
+        nSigmaNegInnerTof = cascade.nSigmaInnerTofOmegaNegPr();
+        nSigmaNegOuterTof = cascade.nSigmaOuterTofOmegaNegPr();
+        hasBachInnerTof = cascade.hasInnerTofOmegaBachKa();
+        hasPosInnerTof = cascade.hasOuterTofOmegaBachKa();
+        hasNegInnerTof = cascade.hasInnerTofOmegaPosPi();
+        hasBachOuterTof = cascade.hasOuterTofOmegaPosPi();
+        hasPosOuterTof = cascade.hasInnerTofOmegaNegPr();
+        hasNegOuterTof = cascade.hasOuterTofOmegaNegPr();
+        break;
+
+      default:
+        break;
+    }
+  }
 
   void init(InitContext&)
   {
@@ -236,7 +317,7 @@ struct Alice3Strangeness {
       histos.add("reconstructedCandidates/Cascade/h3dOmegaCandidates", "h3dOmegaCandidates", kTH3D, {histAxes.axisPt, histAxes.axisEta, histAxes.axisOmegaMass});
       histos.add("reconstructedCandidates/Cascade/h3dAntiOmegaCandidates", "h3dAntiOmegaCandidates", kTH3D, {histAxes.axisPt, histAxes.axisEta, histAxes.axisOmegaMass});
 
-      histos.add("reconstructedCandidates/Cascade/hSelectionQa", "hSelectionQa", kTH1D, {{20, 0.5, 20.5}});
+      histos.add("reconstructedCandidates/Cascade/hSelectionQa", "hSelectionQa", kTH1D, {{25, 0.5, 25.5}});
       histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(1, "all candidates");
       histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(2, "pos dcaXY");
       histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(3, "neg dcaXY");
@@ -253,6 +334,12 @@ struct Alice3Strangeness {
       histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(14, "casc decay radius");
       histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(15, "casc cosPA");
       histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(16, "competing mass");
+      histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(17, "itof nsigma bach");
+      histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(18, "itof nsigma pos");
+      histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(19, "itof nsigma neg");
+      histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(20, "otof nsigma bach");
+      histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(21, "otof nsigma pos");
+      histos.get<TH1>(HIST("reconstructedCandidates/Cascade/hSelectionQa"))->GetXaxis()->SetBinLabel(22, "otof nsigma neg");
 
       histos.add("reconstructedCandidates/Cascade/BeforeSelection/hPosDCAxy", "hPosDCAxy", kTH1D, {histAxes.axisDCA});
       histos.add("reconstructedCandidates/Cascade/BeforeSelection/hNegDCAxy", "hNegDCAxy", kTH1D, {histAxes.axisDCA});
@@ -268,6 +355,22 @@ struct Alice3Strangeness {
       histos.add("reconstructedCandidates/Cascade/BeforeSelection/hCascDecayLength", "hCascDecayLength", kTH1D, {histAxes.axisNormalizedDecayLength});
       histos.add("reconstructedCandidates/Cascade/BeforeSelection/hCascDecayRadius", "hCascDecayRadius", kTH1D, {histAxes.axisRadius});
       histos.add("reconstructedCandidates/Cascade/BeforeSelection/hCascCosPA", "hCascCosPA", kTH1D, {histAxes.axisCosPA});
+      if (cascadeFlags.enable2dPlots) {
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hPosDCAxyVsPt", "hPosDCAxyVsPt", kTH2D, {histAxes.axisPt, histAxes.axisDCA});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hNegDCAxyVsPt", "hNegDCAxyVsPt", kTH2D, {histAxes.axisPt, histAxes.axisDCA});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hBachDCAxyVsPt", "hBachDCAxyVsPt", kTH2D, {histAxes.axisPt, histAxes.axisDCA});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hPosDCAzVsPt", "hPosDCAzVsPt", kTH2D, {histAxes.axisPt, histAxes.axisDCA});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hNegDCAzVsPt", "hNegDCAzVsPt", kTH2D, {histAxes.axisPt, histAxes.axisDCA});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hBachDCAzVsPt", "hBachDCAzVsPt", kTH2D, {histAxes.axisPt, histAxes.axisDCA});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hLaDauDCAVsPt", "hLaDauDCAVsPt", kTH2D, {histAxes.axisPt, histAxes.axisDCA});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hLaDecayRadiusVsPt", "hLaDecayRadiusVsPt", kTH2D, {histAxes.axisPt, histAxes.axisRadius});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hLaMassWindowVsPt", "hLaMassWindowVsPt", kTH2D, {histAxes.axisPt, histAxes.axisLambdaMass});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hLaCosPAVsPt", "hLaCosPAVsPt", kTH2D, {histAxes.axisPt, histAxes.axisCosPA});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hCascDauDCAVsPt", "hCascDauDCAVsPt", kTH2D, {histAxes.axisPt, histAxes.axisDCA});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hCascDecayLengthVsPt", "hCascDecayLengthVsPt", kTH2D, {histAxes.axisPt, histAxes.axisNormalizedDecayLength});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hCascDecayRadiusVsPt", "hCascDecayRadiusVsPt", kTH2D, {histAxes.axisPt, histAxes.axisRadius});
+        histos.add("reconstructedCandidates/Cascade/BeforeSelection/hCascCosPAVsPt", "hCascCosPAVsPt", kTH2D, {histAxes.axisPt, histAxes.axisCosPA});
+      }
       histos.addClone("reconstructedCandidates/Cascade/BeforeSelection/", "reconstructedCandidates/Cascade/AfterSelection/");
     }
 
@@ -533,7 +636,22 @@ struct Alice3Strangeness {
       histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hCascDecayLength"), normalizedDecayLength);
       histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hCascDecayRadius"), cascade.cascradius());
       histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hCascCosPA"), cascade.casccosPA(collision.posX(), collision.posY(), collision.posZ()));
-
+      if (cascadeFlags.enable2dPlots) {
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hPosDCAxyVsPt"), cascade.pt(), positive.dcaXY() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hNegDCAxyVsPt"), cascade.pt(), negative.dcaXY() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hBachDCAxyVsPt"), cascade.pt(), bachelor.dcaXY() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hPosDCAzVsPt"), cascade.pt(), positive.dcaZ() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hNegDCAzVsPt"), cascade.pt(), negative.dcaZ() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hBachDCAzVsPt"), cascade.pt(), bachelor.dcaZ() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hLaDauDCAVsPt"), cascade.pt(), cascade.dcaV0daughters() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hLaDecayRadiusVsPt"), cascade.pt(), cascade.v0radius());
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hLaMassWindowVsPt"), cascade.pt(), cascade.mLambda());
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hLaCosPAVsPt"), cascade.pt(), cascade.v0cosPA(collision.posX(), collision.posY(), collision.posZ()));
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hCascDauDCAVsPt"), cascade.pt(), cascade.dcacascdaughters() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hCascDecayLengthVsPt"), cascade.pt(), normalizedDecayLength);
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hCascDecayRadiusVsPt"), cascade.pt(), cascade.cascradius());
+        histos.fill(HIST("reconstructedCandidates/Cascade/BeforeSelection/hCascCosPAVsPt"), cascade.pt(), cascade.casccosPA(collision.posX(), collision.posY(), collision.posZ()));
+      }
       if (cascadeFlags.analyseOnlyTrueCascades) {
         if (!cascade.has_mcParticle()) {
           continue;
@@ -620,7 +738,58 @@ struct Alice3Strangeness {
         continue;
       }
 
+      if (cascadeFlags.tofInner || cascadeFlags.tofOuter) {
+        configureNSigmas(cascade);
+      }
+
       histos.fill(HIST("reconstructedCandidates/Cascade/hSelectionQa"), 16 /* Pass casc competing mass rej*/);
+      if (cascadeFlags.tofInner) {
+        const bool applyNSigmaCut = cascadeFlags.rejectNoInnerTofSignal || hasBachInnerTof;
+        if (applyNSigmaCut && nSigmaBachInnerTof > cascadeSelectionValues.bachMaxNSigma) {
+          continue; // reject: nSigma cut applies (either TOF signal present, or no-signal tracks are required to pass it too)
+        }
+      }
+      histos.fill(HIST("reconstructedCandidates/Cascade/hSelectionQa"), 17 /* Pass bach itof nsigma*/);
+
+      if (cascadeFlags.tofInner) {
+        const bool applyNSigmaCut = cascadeFlags.rejectNoInnerTofSignal || hasPosInnerTof;
+        if (applyNSigmaCut && nSigmaPosInnerTof > cascadeSelectionValues.posMaxNSigma) {
+          continue;
+        }
+      }
+      histos.fill(HIST("reconstructedCandidates/Cascade/hSelectionQa"), 18 /* Pass pos itof nsigma*/);
+
+      if (cascadeFlags.tofInner) {
+        const bool applyNSigmaCut = cascadeFlags.rejectNoInnerTofSignal || hasNegInnerTof;
+        if (applyNSigmaCut && nSigmaNegInnerTof > cascadeSelectionValues.negMaxNSigma) {
+          continue;
+        }
+      }
+      histos.fill(HIST("reconstructedCandidates/Cascade/hSelectionQa"), 19 /* Pass neg itof nsigma*/);
+
+      if (cascadeFlags.tofOuter) {
+        const bool applyNSigmaCut = cascadeFlags.rejectNoOuterTofSignal || hasBachOuterTof;
+        if (applyNSigmaCut && nSigmaBachOuterTof > cascadeSelectionValues.bachMaxNSigma) {
+          continue;
+        }
+      }
+      histos.fill(HIST("reconstructedCandidates/Cascade/hSelectionQa"), 20 /* Pass bach otof nsigma*/);
+
+      if (cascadeFlags.tofOuter) {
+        const bool applyNSigmaCut = cascadeFlags.rejectNoOuterTofSignal || hasPosOuterTof;
+        if (applyNSigmaCut && nSigmaPosOuterTof > cascadeSelectionValues.posMaxNSigma) {
+          continue;
+        }
+      }
+      histos.fill(HIST("reconstructedCandidates/Cascade/hSelectionQa"), 21 /* Pass pos otof nsigma*/);
+
+      if (cascadeFlags.tofOuter) {
+        const bool applyNSigmaCut = cascadeFlags.rejectNoOuterTofSignal || hasNegOuterTof;
+        if (applyNSigmaCut && nSigmaNegOuterTof > cascadeSelectionValues.negMaxNSigma) {
+          continue;
+        }
+      }
+      histos.fill(HIST("reconstructedCandidates/Cascade/hSelectionQa"), 22 /* Pass neg otof nsigma*/);
       histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hPosDCAxy"), positive.dcaXY() * ToMicrons);
       histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hNegDCAxy"), negative.dcaXY() * ToMicrons);
       histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hBachDCAxy"), bachelor.dcaXY() * ToMicrons);
@@ -635,6 +804,22 @@ struct Alice3Strangeness {
       histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hCascDecayLength"), normalizedDecayLength);
       histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hCascDecayRadius"), cascade.cascradius());
       histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hCascCosPA"), cascade.casccosPA(collision.posX(), collision.posY(), collision.posZ()));
+      if (cascadeFlags.enable2dPlots) {
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hPosDCAxyVsPt"), cascade.pt(), positive.dcaXY() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hNegDCAxyVsPt"), cascade.pt(), negative.dcaXY() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hBachDCAxyVsPt"), cascade.pt(), bachelor.dcaXY() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hPosDCAzVsPt"), cascade.pt(), positive.dcaZ() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hNegDCAzVsPt"), cascade.pt(), negative.dcaZ() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hBachDCAzVsPt"), cascade.pt(), bachelor.dcaZ() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hLaDauDCAVsPt"), cascade.pt(), cascade.dcaV0daughters() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hLaDecayRadiusVsPt"), cascade.pt(), cascade.v0radius());
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hLaMassWindowVsPt"), cascade.pt(), cascade.mLambda());
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hLaCosPAVsPt"), cascade.pt(), cascade.v0cosPA(collision.posX(), collision.posY(), collision.posZ()));
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hCascDauDCAVsPt"), cascade.pt(), cascade.dcacascdaughters() * ToMicrons);
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hCascDecayLengthVsPt"), cascade.pt(), normalizedDecayLength);
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hCascDecayRadiusVsPt"), cascade.pt(), cascade.cascradius());
+        histos.fill(HIST("reconstructedCandidates/Cascade/AfterSelection/hCascCosPAVsPt"), cascade.pt(), cascade.casccosPA(collision.posX(), collision.posY(), collision.posZ()));
+      }
       if (cascade.sign() < 0) {
         histos.fill(HIST("reconstructedCandidates/Cascade/hMassSelectedXiCandidates"), cascade.mXi());
         histos.fill(HIST("reconstructedCandidates/Cascade/hMassSelectedOmegaCandidates"), cascade.mOmega());

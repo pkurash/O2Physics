@@ -50,6 +50,11 @@ constexpr const char PrefixLambdaCleaner2[] = "LambdaCleaner2";
 using ConfLambdaCleaner1 = ConfParticleCleaner<PrefixLambdaCleaner1>;
 using ConfLambdaCleaner2 = ConfParticleCleaner<PrefixLambdaCleaner2>;
 
+constexpr const char PrefixD0Cleaner1[] = "D0Cleaner1";
+constexpr const char PrefixD0Cleaner2[] = "D0Cleaner2";
+using ConfD0Cleaner1 = ConfParticleCleaner<PrefixD0Cleaner1>;
+using ConfD0Cleaner2 = ConfParticleCleaner<PrefixD0Cleaner2>;
+
 constexpr const char PrefixK0shortCleaner1[] = "K0shortCleaner1";
 constexpr const char PrefixK0shortCleaner2[] = "K0shortCleaner2";
 using ConfK0shortCleaner1 = ConfParticleCleaner<PrefixK0shortCleaner1>;
@@ -232,9 +237,9 @@ class ParticleCleaner
 
  private:
   bool mActivate = false;
-  bool mRejectParticleWithoutMcParticle = true;
-  bool mRejectParticleWithoutMcMother = true;
-  bool mRejectParticleWithoutMcPartonicMother = true;
+  bool mRejectParticleWithoutMcParticle = false;
+  bool mRejectParticleWithoutMcMother = false;
+  bool mRejectParticleWithoutMcPartonicMother = false;
   std::vector<int> mRequiredPdgCodes;
   std::vector<int> mRejectedPdgCodes;
   std::vector<int> mRequiredMotherPdgCodes;
